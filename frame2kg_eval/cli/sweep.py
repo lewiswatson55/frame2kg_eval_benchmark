@@ -1,0 +1,172 @@
+"""Threshold sweep CLI command."""
+
+import click
+import csv
+import json
+import yaml
+from pathlib import Path
+from typing import Dict, List
+from itertools import product
+from tqdm import tqdm
+
+from frame2kg_eval.io.preds import PredictionLoader
+from frame2kg_eval.io.groundtruth import create_ground_truth_adapter
+from frame2kg_eval.matching.assign import two_stage_node_match
+from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro
+from frame2kg_eval.metrics.edges import edge_prf1
+from frame2kg_eval.utils.logging import logger
+
+
+@click.command()
+@click.option("--pred-dir", type=click.Path(exists=True, path_type=Path), required=True,
+              help="Directory containing prediction files")
+@click.option("--gt", type=str, required=True,
+              help="Ground truth spec (hf:dataset:split or path)")
+@click.option("--taus", multiple=True, type=float, default=(0.3, 0.5, 0.7),
+              help="IoU thresholds to sweep (use multiple times: --taus 0.3 --taus 0.5)")
+@click.option("--alphas", multiple=True, type=float, default=(0.5, 0.7, 0.85),
+              help="Alpha blending weights to sweep (use multiple times: --alphas 0.5 --alphas 0.7)")
+@click.option("--text-mode", type=click.Choice(["tfidf", "semantic", "hybrid"]), default="semantic",
+              help="Text similarity mode")
+@click.option("--text-floor", type=float, default=0.25,
+              help="Minimum text similarity threshold")
+@click.option("--out", type=click.Path(path_type=Path), required=True,
+              help="Output CSV file path")
+@click.option("--config", type=click.Path(exists=True, path_type=Path), default=None,
+              help="Configuration file path")
+@click.option("--verbose/--quiet", default=True,
+              help="Verbose output")
+def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose):
+    """Sweep τ and α parameters to find optimal thresholds."""
+    
+    # Load base configuration
+    cfg = {}
+    if config and Path(config).exists():
+        with open(config) as f:
+            cfg = yaml.safe_load(f)
+    
+    # Set sweep parameters
+    tau_values = list(taus) if taus else cfg.get("default_taus", [0.3, 0.5, 0.7])
+    alpha_values = list(alphas) if alphas else cfg.get("default_alphas", [0.5, 0.7, 0.85])
+    
+    text_fields = tuple(cfg.get("text_fields", ["id", "label"]))
+    
+    logger.info(f"Sweeping τ={tau_values}, α={alpha_values}")
+    logger.info(f"Text mode: {text_mode}, floor: {text_floor}")
+    
+    # Load data
+    logger.info(f"Loading predictions from {pred_dir}")
+    pred_loader = PredictionLoader(pred_dir)
+    
+    logger.info(f"Loading ground truth: {gt}")
+    gt_adapter = create_ground_truth_adapter(gt)
+    
+    # Collect all frames to evaluate
+    frames_to_eval = []
+    pred_index = pred_loader.get_index()
+    
+    for (video_id, frame_no), _ in sorted(pred_index.items()):
+        pred_graph = pred_loader.get_graph(video_id, frame_no)
+        gt_graph = gt_adapter.get_graph(video_id, frame_no)
+        
+        if pred_graph and gt_graph:
+            frames_to_eval.append({
+                "video_id": video_id,
+                "frame_no": frame_no,
+                "p_nodes": pred_graph["nodes"],
+                "g_nodes": gt_graph["nodes"],
+                "p_edges": pred_graph["edges"],
+                "g_edges": gt_graph["edges"]
+            })
+    
+    logger.info(f"Found {len(frames_to_eval)} valid frames to evaluate")
+    
+    # Run sweep
+    results = []
+    param_combinations = list(product(tau_values, alpha_values))
+    
+    for tau, alpha in tqdm(param_combinations, desc="Sweeping parameters"):
+        # Evaluate all frames with these parameters
+        node_metrics_list = []
+        edge_metrics_list = []
+        
+        for frame in frames_to_eval:
+            # Node matching
+            match_result = two_stage_node_match(
+                frame["p_nodes"], frame["g_nodes"],
+                tau=tau,
+                alpha=alpha,
+                text_mode=text_mode,
+                text_fields=text_fields,
+                text_floor=text_floor
+            )
+            
+            # Node metrics
+            node_metrics = node_prf1(
+                frame["p_nodes"], frame["g_nodes"], 
+                match_result["mapping"]
+            )
+            node_metrics_list.append(node_metrics)
+            
+            # Edge metrics
+            node_id_mapping = {}
+            for p_idx, g_idx in match_result["mapping"].items():
+                p_id = frame["p_nodes"][p_idx]["id"]
+                g_id = frame["g_nodes"][g_idx]["id"]
+                node_id_mapping[p_id] = g_id
+            
+            edge_metrics = edge_prf1(
+                frame["p_edges"], frame["g_edges"],
+                node_id_mapping, "exact"
+            )
+            edge_metrics_list.append(edge_metrics)
+        
+        # Aggregate metrics
+        node_micro = aggregate_micro(node_metrics_list)
+        edge_micro = aggregate_micro(edge_metrics_list)
+        
+        # Store result
+        results.append({
+            "tau": tau,
+            "alpha": alpha,
+            "text_mode": text_mode,
+            "text_floor": text_floor,
+            "node_f1_micro": node_micro["f1"],
+            "node_precision_micro": node_micro["precision"],
+            "node_recall_micro": node_micro["recall"],
+            "edge_f1_micro": edge_micro["f1"],
+            "edge_precision_micro": edge_micro["precision"],
+            "edge_recall_micro": edge_micro["recall"],
+            "combined_f1": (node_micro["f1"] + edge_micro["f1"]) / 2,
+            "num_frames": len(frames_to_eval)
+        })
+    
+    # Sort by combined F1
+    results.sort(key=lambda x: x["combined_f1"], reverse=True)
+    
+    # Write results
+    output_path = Path(out)
+    with open(output_path, 'w', newline='') as f:
+        if results:
+            fieldnames = list(results[0].keys())
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(results)
+    
+    # Print top results
+    logger.success(f"Sweep complete! Results written to {output_path}")
+    logger.info("\nTop 5 parameter combinations:")
+    for i, result in enumerate(results[:5], 1):
+        logger.info(f"{i}. τ={result['tau']:.2f}, α={result['alpha']:.2f}: "
+                   f"Node F1={result['node_f1_micro']:.3f}, "
+                   f"Edge F1={result['edge_f1_micro']:.3f}, "
+                   f"Combined={result['combined_f1']:.3f}")
+    
+    # Best parameters
+    best = results[0]
+    logger.success(f"\nBest parameters: τ={best['tau']}, α={best['alpha']}")
+    logger.success(f"Best combined F1: {best['combined_f1']:.3f}")
+
+
+if __name__ == "__main__":
+    main()

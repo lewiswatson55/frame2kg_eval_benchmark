@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frame2kg-eval"
+version = "1.0.0"
+description = "Frame2KG benchmark evaluation toolkit for frame-to-knowledge-graph task assessment"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    {name = "Frame2KG Team"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.20.0",
+    "scipy>=1.7.0",
+    "scikit-learn>=1.0.0",
+    "pandas>=1.3.0",
+    "datasets>=2.0.0",
+    "Pillow>=8.0.0",
+    "PyYAML>=6.0",
+    "tqdm>=4.62.0",
+    "click>=8.0.0",
+    "sentence-transformers>=2.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "isort>=5.10.0",
+    "flake8>=4.0.0",
+]
+
+[project.scripts]
+frame2kg-eval = "frame2kg_eval.cli.evaluate:main"
+frame2kg-sweep = "frame2kg_eval.cli.sweep:main"
+frame2kg-aggregate = "frame2kg_eval.cli.aggregate:main"
+frame2kg-doctor = "frame2kg_eval.cli.doctor:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["frame2kg_eval*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+
+[tool.isort]
+profile = "black"
+line_length = 100
