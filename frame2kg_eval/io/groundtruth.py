@@ -38,13 +38,52 @@ class HFDatasetAdapter(GroundTruthAdapter):
             dataset_name: Name of HuggingFace dataset
             split: Dataset split to use (validation_dev, testing, etc.)
         """
-        from datasets import load_dataset
+        from datasets import load_dataset, DownloadConfig
+        import os
         
         self.dataset_name = dataset_name
         self.split = split
         
-        # Load dataset
-        self.dataset = load_dataset(dataset_name)[split]
+        # Load dataset with various fallback strategies
+        try:
+            # Try with custom cache dir to avoid filesystem issues
+            cache_dir = os.path.expanduser("~/.cache/huggingface/datasets")
+            os.makedirs(cache_dir, exist_ok=True)
+            
+            # Load with explicit download config
+            download_config = DownloadConfig(
+                cache_dir=cache_dir,
+                force_download=False,
+                resume_download=True
+            )
+            
+            # Try loading the dataset
+            self.dataset = load_dataset(
+                dataset_name, 
+                split=split,
+                download_config=download_config,
+                cache_dir=cache_dir
+            )
+        except Exception as e1:
+            # Fallback: Try without trust_remote_code
+            try:
+                self.dataset = load_dataset(dataset_name, split=split)
+            except Exception as e2:
+                # Final fallback: Load all and select split
+                try:
+                    import warnings
+                    warnings.filterwarnings("ignore")
+                    all_data = load_dataset(dataset_name, cache_dir=None)
+                    if split in all_data:
+                        self.dataset = all_data[split]
+                    else:
+                        raise ValueError(f"Split '{split}' not found. Available: {list(all_data.keys())}")
+                except Exception as e3:
+                    raise RuntimeError(
+                        f"Failed to load dataset {dataset_name}:{split}. "
+                        f"Try updating datasets: pip install -U datasets. "
+                        f"Errors: {e1}, {e2}, {e3}"
+                    )
         
         # Build index for fast lookup
         self._index = {}
