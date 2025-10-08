@@ -159,12 +159,12 @@ If you use this toolkit in your research, please cite:
 ```bibtex
 @software{frame2kg_eval,
   title = {Frame2KG Evaluation Toolkit},
-  author = {Frame2KG Team},
-  year = {2024},
-  url = {https://github.com/frame2kg/evaluation}
+  author = {TBC},
+  year = {2025},
+  url = {TBC}
 }
 ```
 
 ## License
 
-MIT License - see LICENSE file for details.
+TBC
