@@ -1,0 +1,6 @@
+{
+    "nodes": [
+        {"id": "car1", "label": "vehicle", "location": "0.2,0.2,0.5,0.5"}
+    ],
+    "edges": []
+}
