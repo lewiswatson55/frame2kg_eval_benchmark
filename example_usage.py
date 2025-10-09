@@ -8,6 +8,7 @@ from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro
 from frame2kg_eval.metrics.edges import edge_prf1
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
 from frame2kg_eval.metrics.conformity import compute_conformity_from_directory, check_graph_schema
+from frame2kg_eval.metrics.boxes import box_iou_stats
 from frame2kg_eval.utils.logging import logger
 
 
@@ -104,6 +105,20 @@ def main():
         
         logger.info(f"Edge metrics: P={edge_metrics['precision']:.3f}, "
                    f"R={edge_metrics['recall']:.3f}, F1={edge_metrics['f1']:.3f}")
+        
+        # Box IoU closeness stats (how close are the predicted boxes?)
+        iou_matrix = match_result.get("matrices", {}).get("iou")
+        box_stats = box_iou_stats(pred_graph["nodes"], gt_graph["nodes"], match_result["mapping"], iou_matrix=iou_matrix)
+        logger.info(
+            "Box IoU closeness: mean={:.3f}, median={:.3f}, std={:.3f}, min={:.3f}, max={:.3f}, matches={}".format(
+                box_stats["mean_iou"],
+                box_stats["median_iou"],
+                box_stats["std_iou"],
+                box_stats["min_iou"],
+                box_stats["max_iou"],
+                box_stats["count"],
+            )
+        )
         
         break  # Just evaluate one frame for demo
     

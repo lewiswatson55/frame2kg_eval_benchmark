@@ -16,6 +16,7 @@ from frame2kg_eval.metrics.edges import edge_prf1, edge_by_label_baseline
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
 from frame2kg_eval.metrics.conformity import compute_conformity_from_directory
 from frame2kg_eval.metrics.timing import manifest_timing
+from frame2kg_eval.metrics.boxes import (box_iou_stats,aggregate_iou_micro,aggregate_iou_macro)
 from frame2kg_eval.utils.logging import logger
 
 
@@ -114,6 +115,7 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     frame_results = []
     all_node_metrics = []
     all_edge_metrics = []
+    all_box_stats = []
     
     # Process each frame
     pred_index = pred_loader.get_index()
@@ -154,6 +156,11 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         # Node metrics
         node_metrics = node_prf1(p_nodes, g_nodes, match_result["mapping"])
         all_node_metrics.append(node_metrics)
+
+        # Box IoU closeness stats using precomputed IoU matrix
+        iou_matrix = match_result.get("matrices", {}).get("iou")
+        box_stats = box_iou_stats(p_nodes, g_nodes, match_result["mapping"], iou_matrix=iou_matrix)
+        all_box_stats.append(box_stats)
         
         # Build node ID mapping for edges
         node_id_mapping = {}
@@ -192,7 +199,14 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
             "edge_fn": edge_metrics["fn"],
             "edge_precision": edge_metrics["precision"],
             "edge_recall": edge_metrics["recall"],
-            "edge_f1": edge_metrics["f1"]
+            "edge_f1": edge_metrics["f1"],
+            # Box closeness stats
+            "box_mean_iou": box_stats["mean_iou"],
+            "box_median_iou": box_stats["median_iou"],
+            "box_std_iou": box_stats["std_iou"],
+            "box_min_iou": box_stats["min_iou"],
+            "box_max_iou": box_stats["max_iou"],
+            "box_match_count": box_stats["count"],
         }
         
         if edge_baseline_metrics:
@@ -215,6 +229,8 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     node_macro = aggregate_macro(all_node_metrics)
     edge_micro = aggregate_micro(all_edge_metrics)
     edge_macro = aggregate_macro(all_edge_metrics)
+    box_micro = aggregate_iou_micro(all_box_stats)
+    box_macro = aggregate_iou_macro(all_box_stats)
     
     # Write output
     output_path = Path(out)
@@ -229,7 +245,9 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 "node_micro": node_micro,
                 "node_macro": node_macro,
                 "edge_micro": edge_micro,
-                "edge_macro": edge_macro
+                "edge_macro": edge_macro,
+                "box_micro": box_micro,
+                "box_macro": box_macro,
             },
             "frames": frame_results
         }
@@ -272,7 +290,9 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                     "node_f1": node_micro["f1"],
                     "edge_precision": edge_micro["precision"],
                     "edge_recall": edge_micro["recall"],
-                    "edge_f1": edge_micro["f1"]
+                    "edge_f1": edge_micro["f1"],
+                    "box_mean_iou": box_micro["mean_iou"],
+                    "box_median_iou": box_micro["median_iou"],
                 })
                 writer.writerow({
                     "video_id": "SUMMARY",
@@ -282,7 +302,9 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                     "node_f1": node_macro["f1"],
                     "edge_precision": edge_macro["precision"],
                     "edge_recall": edge_macro["recall"],
-                    "edge_f1": edge_macro["f1"]
+                    "edge_f1": edge_macro["f1"],
+                    "box_mean_iou": box_macro["mean_iou"],
+                    "box_median_iou": box_macro["median_iou"],
                 })
     
     # Print summary
