@@ -18,6 +18,7 @@ from frame2kg_eval.metrics.conformity import compute_conformity_from_directory
 from frame2kg_eval.metrics.timing import manifest_timing
 from frame2kg_eval.metrics.boxes import (box_iou_stats,aggregate_iou_micro,aggregate_iou_macro)
 from frame2kg_eval.utils.logging import logger
+from frame2kg_eval.utils.seeding import seed_matching, MATCHING_SEED
 
 
 def load_config(config_path: Optional[Path] = None) -> Dict:
@@ -86,9 +87,13 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         cfg["text_fields"] = list(text_fields)
     if text_floor is not None:
         cfg["text_floor"] = text_floor
-    
+
+    # Ensure deterministic behaviour across matching components
+    seed_matching()
+
     if verbose:
         logger.info(f"Configuration: τ={cfg['tau']}, α={cfg['alpha']}, mode={cfg['text_mode']}")
+        logger.info(f"Matching seed: {MATCHING_SEED}")
     
     # Load predictions and ground truth
     logger.info(f"Loading predictions from {pred_dir}")
@@ -157,7 +162,7 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         node_metrics = node_prf1(p_nodes, g_nodes, match_result["mapping"])
         all_node_metrics.append(node_metrics)
 
-        # Box IoU closeness stats using precomputed IoU matrix
+        # Matched-pair IoU stats using precomputed IoU matrix when available
         iou_matrix = match_result.get("matrices", {}).get("iou")
         box_stats = box_iou_stats(p_nodes, g_nodes, match_result["mapping"], iou_matrix=iou_matrix)
         all_box_stats.append(box_stats)
@@ -200,7 +205,7 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
             "edge_precision": edge_metrics["precision"],
             "edge_recall": edge_metrics["recall"],
             "edge_f1": edge_metrics["f1"],
-            # Box closeness stats
+            # Matched-pair IoU (box IoU) stats
             "box_mean_iou": box_stats["mean_iou"],
             "box_median_iou": box_stats["median_iou"],
             "box_std_iou": box_stats["std_iou"],
@@ -311,6 +316,11 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     logger.success(f"Evaluation complete! Results written to {output_path}")
     logger.info(f"Node F1: micro={node_micro['f1']:.3f}, macro={node_macro['f1']:.3f}")
     logger.info(f"Edge F1: micro={edge_micro['f1']:.3f}, macro={edge_macro['f1']:.3f}")
+    logger.info(
+        "Matched-pair IoU (box IoU): micro={micro:.3f} (weighted by matched pairs), "
+        "macro={macro:.3f} (unweighted mean of per-frame means)"
+        .format(micro=box_micro["mean_iou"], macro=box_macro["mean_iou"])
+    )
     
     if timing_stats and timing_stats["n"] > 0:
         logger.info(f"Mean generation time: {timing_stats['mean']:.2f}s")

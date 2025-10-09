@@ -18,10 +18,15 @@ from frame2kg_eval.metrics.conformity import compute_conformity_from_directory
 from frame2kg_eval.metrics.timing import manifest_timing
 from frame2kg_eval.metrics.boxes import box_iou_stats, aggregate_iou_micro
 from frame2kg_eval.utils.logging import logger
+from frame2kg_eval.utils.seeding import seed_matching, MATCHING_SEED
 
 
 def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
     """Evaluate a single prediction run."""
+
+    # Reset RNG state to keep matching deterministic per run
+    seed_matching()
+
     pred_loader = PredictionLoader(pred_dir)
     
     # Validity statistics
@@ -75,7 +80,7 @@ def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
         )
         edge_metrics_list.append(edge_metrics)
 
-        # Box IoU stats (use precomputed IoU matrix)
+        # Matched-pair IoU (box IoU) stats (use precomputed IoU matrix)
         iou_matrix = match_result.get("matrices", {}).get("iou")
         box_stats = box_iou_stats(pred_graph["nodes"], gt_graph["nodes"], match_result["mapping"], iou_matrix=iou_matrix)
         box_stats_list.append(box_stats)
@@ -146,6 +151,7 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
     })
     
     logger.info(f"Configuration: τ={tau}, α={alpha}, mode={text_mode}")
+    logger.info(f"Matching seed: {MATCHING_SEED}")
     
     # Find all run directories
     pred_root = Path(pred_root)
@@ -227,8 +233,8 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
         logger.info(f"  Average Node F1: {avg_node_f1:.3f}")
         logger.info(f"  Average Edge F1: {avg_edge_f1:.3f}")
         logger.info(f"  Average Validity: {avg_validity:.1f}%")
-        logger.info(f"  Average Box IoU (micro): {avg_box_iou:.3f}")
-        logger.info(f"  Average Box IoU median (micro): {avg_box_median:.3f}")
+        logger.info(f"  Matched-pair IoU (box IoU) micro mean: {avg_box_iou:.3f}")
+        logger.info(f"  Matched-pair IoU (box IoU) micro median: {avg_box_median:.3f}")
         
         # Best run
         best = results[0]
@@ -236,8 +242,12 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
         logger.info(f"  Node F1: {best['node_f1']:.3f}")
         logger.info(f"  Edge F1: {best['edge_f1']:.3f}")
         logger.info(f"  Validity: {best['validity_rate']:.1f}%")
-        logger.info(f"  Box IoU (micro): {best.get('box_mean_iou', 0.0):.3f}")
-        logger.info(f"  Box IoU median (micro): {best.get('box_median_iou', 0.0):.3f}")
+        logger.info(
+            f"  Matched-pair IoU (box IoU) micro mean: {best.get('box_mean_iou', 0.0):.3f}"
+        )
+        logger.info(
+            f"  Matched-pair IoU (box IoU) micro median: {best.get('box_median_iou', 0.0):.3f}"
+        )
 
 
 if __name__ == "__main__":

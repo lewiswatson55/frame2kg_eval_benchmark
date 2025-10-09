@@ -220,12 +220,12 @@ match_result = two_stage_node_match(
 
 print(f"Node F1: {metrics['f1']:.3f}")
 
-# Box IoU closeness
+# Matched-pair IoU (box IoU)
 from frame2kg_eval.metrics.boxes import box_iou_stats
 iou_matrix = match_result.get("matrices", {}).get("iou")
 box_stats = box_iou_stats(pred_graph["nodes"], gt_graph["nodes"], match_result["mapping"], iou_matrix=iou_matrix)
 print(
-    f"Box IoU mean/median: {box_stats['mean_iou']:.3f}/{box_stats['median_iou']:.3f} "
+    f"Matched-pair IoU mean/median: {box_stats['mean_iou']:.3f}/{box_stats['median_iou']:.3f} "
     f"over {box_stats['count']} matches"
 )
 ```
@@ -237,10 +237,14 @@ print(
 - **Recall**: TP / (TP + FN) - Fraction of ground truth nodes that are found
 - **F1**: Harmonic mean of precision and recall
 
-### Box IoU Closeness
+### Matched-pair IoU (box IoU)
 - **Mean IoU**: Average IoU across all matched node pairs in a frame
 - **Median IoU**: 50th percentile IoU across matched node pairs in a frame
 - **Count**: Number of matched node pairs in a frame
+- **Micro summary**: Mean IoU across all matched pairs (weighted by match count)
+- **Macro summary**: Unweighted mean of per-frame mean IoU values
+
+CLI entry points seed Python and NumPy RNGs to `42` before matching so repeated evaluations stay deterministic; override with `seed_matching(new_seed)` if you need a different value.
 
 ### Edge Metrics
 - Edges match when both endpoints map correctly and predicates match

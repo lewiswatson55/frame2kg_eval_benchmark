@@ -1,6 +1,6 @@
-"""Bounding-box closeness metrics (IoU-based).
+"""Matched-pair IoU (box IoU) metrics.
 
-Primary metric: mean IoU across matched node pairs.
+Primary per-frame statistic: mean IoU across matched node pairs.
 
 Per-frame outputs include:
 - mean_iou: Average IoU across matched pairs (0.0 if none)
@@ -9,11 +9,12 @@ Per-frame outputs include:
 - min_iou, max_iou: Extremes (0.0 if none)
 - count: Number of matched pairs
 
-NB: Mean could in theory be too brittle however since we
-are clamping IoU values to [0,1] we should get relatively stable
-values even if there are crazy outliers. However, I am adding median.
+NB: Mean could in theory be too brittle; since IoU values are clamped
+to [0,1] we still obtain relatively stable values even with outliers.
+Median is also provided for robustness.
 
-NB 2: Matched boxes only. FP/FN should be reported with iou.
+NB 2: Only matched boxes are considered - FP/FN boxes are captured via
+precision/recall-style metrics elsewhere.
 
 """
 
@@ -108,7 +109,7 @@ def box_iou_stats(
 
 
 def aggregate_iou_micro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
-    """Micro-average IoU across frames (weighted by matched count).
+    """Matched-pair IoU micro-average (weighted by matched pair count).
 
     Args:
         stats_list: Per-frame stats from `box_iou_stats`
@@ -134,7 +135,7 @@ def aggregate_iou_micro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
 
 
 def aggregate_iou_macro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
-    """Macro-average IoU across frames (unweighted average of per-frame means).
+    """Matched-pair IoU macro-average (unweighted mean of per-frame means).
 
     Args:
         stats_list: Per-frame stats from `box_iou_stats`
