@@ -45,7 +45,7 @@ frame2kg-eval \
 **Output**: CSV file with per-frame metrics and aggregated results (micro/macro).
 
 Columns now include box closeness statistics:
-- `box_mean_iou`: Mean IoU across matched node pairs (per frame, and summary rows)
+- `box_mean_iou`, `box_median_iou`: Mean and median IoU across matched node pairs (per frame, and summary rows)
 - `box_std_iou`, `box_min_iou`, `box_max_iou`, `box_match_count`
 
 ### 2. frame2kg-sweep - Parameter Optimization
@@ -224,7 +224,10 @@ print(f"Node F1: {metrics['f1']:.3f}")
 from frame2kg_eval.metrics.boxes import box_iou_stats
 iou_matrix = match_result.get("matrices", {}).get("iou")
 box_stats = box_iou_stats(pred_graph["nodes"], gt_graph["nodes"], match_result["mapping"], iou_matrix=iou_matrix)
-print(f"Box IoU mean: {box_stats['mean_iou']:.3f} over {box_stats['count']} matches")
+print(
+    f"Box IoU mean/median: {box_stats['mean_iou']:.3f}/{box_stats['median_iou']:.3f} "
+    f"over {box_stats['count']} matches"
+)
 ```
 
 ## Metrics Explained
@@ -236,6 +239,7 @@ print(f"Box IoU mean: {box_stats['mean_iou']:.3f} over {box_stats['count']} matc
 
 ### Box IoU Closeness
 - **Mean IoU**: Average IoU across all matched node pairs in a frame
+- **Median IoU**: 50th percentile IoU across matched node pairs in a frame
 - **Count**: Number of matched node pairs in a frame
 
 ### Edge Metrics

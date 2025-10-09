@@ -100,6 +100,7 @@ def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
         "edge_precision": edge_micro["precision"],
         "edge_recall": edge_micro["recall"],
         "box_mean_iou": box_micro["mean_iou"],
+        "box_median_iou": box_micro["median_iou"],
         "mean_gen_time": timing_stats["mean"] if timing_stats else None,
         "num_frames": len(node_metrics_list)
     }
@@ -204,7 +205,7 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
                 "valid_count", "invalid_count",
                 "node_f1", "node_precision", "node_recall",
                 "edge_f1", "edge_precision", "edge_recall",
-                "box_mean_iou",
+                "box_mean_iou", "box_median_iou",
                 "mean_gen_time", "num_frames"
             ]
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -220,12 +221,14 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
         avg_edge_f1 = sum(r["edge_f1"] for r in results) / len(results)
         avg_validity = sum(r["validity_rate"] for r in results) / len(results)
         avg_box_iou = sum(r.get("box_mean_iou", 0.0) for r in results) / len(results)
+        avg_box_median = sum(r.get("box_median_iou", 0.0) for r in results) / len(results)
         
         logger.info(f"\nOverall statistics across {len(results)} runs:")
         logger.info(f"  Average Node F1: {avg_node_f1:.3f}")
         logger.info(f"  Average Edge F1: {avg_edge_f1:.3f}")
         logger.info(f"  Average Validity: {avg_validity:.1f}%")
         logger.info(f"  Average Box IoU (micro): {avg_box_iou:.3f}")
+        logger.info(f"  Average Box IoU median (micro): {avg_box_median:.3f}")
         
         # Best run
         best = results[0]
@@ -234,6 +237,7 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
         logger.info(f"  Edge F1: {best['edge_f1']:.3f}")
         logger.info(f"  Validity: {best['validity_rate']:.1f}%")
         logger.info(f"  Box IoU (micro): {best.get('box_mean_iou', 0.0):.3f}")
+        logger.info(f"  Box IoU median (micro): {best.get('box_median_iou', 0.0):.3f}")
 
 
 if __name__ == "__main__":

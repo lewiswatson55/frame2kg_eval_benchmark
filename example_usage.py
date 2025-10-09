@@ -110,8 +110,13 @@ def main():
         iou_matrix = match_result.get("matrices", {}).get("iou")
         box_stats = box_iou_stats(pred_graph["nodes"], gt_graph["nodes"], match_result["mapping"], iou_matrix=iou_matrix)
         logger.info(
-            "Box IoU closeness: mean={:.3f}, std={:.3f}, min={:.3f}, max={:.3f}, matches={}".format(
-                box_stats["mean_iou"], box_stats["std_iou"], box_stats["min_iou"], box_stats["max_iou"], box_stats["count"]
+            "Box IoU closeness: mean={:.3f}, median={:.3f}, std={:.3f}, min={:.3f}, max={:.3f}, matches={}".format(
+                box_stats["mean_iou"],
+                box_stats["median_iou"],
+                box_stats["std_iou"],
+                box_stats["min_iou"],
+                box_stats["max_iou"],
+                box_stats["count"],
             )
         )
         

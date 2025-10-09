@@ -202,6 +202,7 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
             "edge_f1": edge_metrics["f1"],
             # Box closeness stats
             "box_mean_iou": box_stats["mean_iou"],
+            "box_median_iou": box_stats["median_iou"],
             "box_std_iou": box_stats["std_iou"],
             "box_min_iou": box_stats["min_iou"],
             "box_max_iou": box_stats["max_iou"],
@@ -291,6 +292,7 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                     "edge_recall": edge_micro["recall"],
                     "edge_f1": edge_micro["f1"],
                     "box_mean_iou": box_micro["mean_iou"],
+                    "box_median_iou": box_micro["median_iou"],
                 })
                 writer.writerow({
                     "video_id": "SUMMARY",
@@ -302,6 +304,7 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                     "edge_recall": edge_macro["recall"],
                     "edge_f1": edge_macro["f1"],
                     "box_mean_iou": box_macro["mean_iou"],
+                    "box_median_iou": box_macro["median_iou"],
                 })
     
     # Print summary

@@ -4,9 +4,17 @@ Primary metric: mean IoU across matched node pairs.
 
 Per-frame outputs include:
 - mean_iou: Average IoU across matched pairs (0.0 if none)
+- median_iou: Median IoU across matched pairs (0.0 if none)
 - std_iou: Standard deviation of IoU values (0.0 if none)
 - min_iou, max_iou: Extremes (0.0 if none)
 - count: Number of matched pairs
+
+NB: Mean could in theory be too brittle however since we
+are clamping IoU values to [0,1] we should get relatively stable
+values even if there are crazy outliers. However, I am adding median.
+
+NB 2: Matched boxes only. FP/FN should be reported with iou.
+
 """
 
 from typing import Dict, List, Optional
@@ -50,7 +58,7 @@ def box_iou_stats(
         iou_matrix: Optional precomputed IoU matrix from matching stage
 
     Returns:
-        Dict with keys: mean_iou, std_iou, min_iou, max_iou, count
+        Dict with keys: mean_iou, median_iou, std_iou, min_iou, max_iou, count, match_ious
     """
     ious: List[float] = []
 
@@ -77,15 +85,25 @@ def box_iou_stats(
                 ious.append(iou)
 
     if not ious:
-        return {"mean_iou": 0.0, "std_iou": 0.0, "min_iou": 0.0, "max_iou": 0.0, "count": 0}
+        return {
+            "mean_iou": 0.0,
+            "median_iou": 0.0,
+            "std_iou": 0.0,
+            "min_iou": 0.0,
+            "max_iou": 0.0,
+            "count": 0,
+            "match_ious": (),
+        }
 
     arr = np.asarray(ious, dtype=np.float32)
     return {
         "mean_iou": float(arr.mean()),
+        "median_iou": float(np.median(arr)),
         "std_iou": float(arr.std(ddof=0)),
         "min_iou": float(arr.min()),
         "max_iou": float(arr.max()),
         "count": int(arr.size),
+        "match_ious": tuple(float(v) for v in arr),
     }
 
 
@@ -96,17 +114,23 @@ def aggregate_iou_micro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
         stats_list: Per-frame stats from `box_iou_stats`
 
     Returns:
-        Dict with mean_iou and total count
+        Dict with mean_iou, median_iou, and total count
     """
     total_count = 0
     weighted_sum = 0.0
+    all_ious: List[float] = []
     for s in stats_list:
         c = int(s.get("count", 0))
         m = float(s.get("mean_iou", 0.0))
         total_count += c
         weighted_sum += m * c
+        if c > 0:
+            match_ious = s.get("match_ious")
+            if match_ious:
+                all_ious.extend(float(v) for v in match_ious)
     mean = (weighted_sum / total_count) if total_count > 0 else 0.0
-    return {"mean_iou": mean, "count": total_count}
+    median = float(np.median(np.asarray(all_ious, dtype=np.float32))) if all_ious else 0.0
+    return {"mean_iou": mean, "median_iou": median, "count": total_count}
 
 
 def aggregate_iou_macro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
@@ -116,9 +140,16 @@ def aggregate_iou_macro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
         stats_list: Per-frame stats from `box_iou_stats`
 
     Returns:
-        Dict with mean_iou and frame_count (frames that had at least one match)
+        Dict with mean_iou, median_iou, and frame_count (frames that had at least one match)
     """
-    means = [float(s.get("mean_iou", 0.0)) for s in stats_list if int(s.get("count", 0)) > 0]
-    if not means:
-        return {"mean_iou": 0.0, "frame_count": 0}
-    return {"mean_iou": float(sum(means) / len(means)), "frame_count": len(means)}
+    filtered = [s for s in stats_list if int(s.get("count", 0)) > 0]
+    if not filtered:
+        return {"mean_iou": 0.0, "median_iou": 0.0, "frame_count": 0}
+
+    means = [float(s.get("mean_iou", 0.0)) for s in filtered]
+    medians = [float(s.get("median_iou", 0.0)) for s in filtered]
+
+    mean_value = float(sum(means) / len(means))
+    median_value = float(np.median(np.asarray(medians, dtype=np.float32)))
+
+    return {"mean_iou": mean_value, "median_iou": median_value, "frame_count": len(filtered)}

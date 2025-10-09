@@ -127,7 +127,7 @@ Edges match when:
 - **Edge metrics**: Similar to nodes, with optional edge-by-label baseline
 - **Validity**: JSON parsing success rate
 - **Schema Conformity**: Validates structure against expected graph schema
-- **Box IoU closeness**: Mean IoU across matched node pairs (reported per-frame as `box_mean_iou` and in summary rows)
+- **Box IoU closeness**: Mean/median IoU across matched node pairs (reported per-frame as `box_mean_iou` / `box_median_iou` and in summary rows)
 - **Timing**: Mean generation time from manifest.csv
 
 ## Configuration
