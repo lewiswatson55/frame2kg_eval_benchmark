@@ -5,20 +5,56 @@ import csv
 import json
 import yaml
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from tqdm import tqdm
 
 from frame2kg_eval.io.preds import PredictionLoader
 from frame2kg_eval.io.groundtruth import create_ground_truth_adapter
-from frame2kg_eval.matching.assign import two_stage_node_match, compute_edge_mapping
+from frame2kg_eval.matching.assign import two_stage_node_match
 from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro, aggregate_macro
 from frame2kg_eval.metrics.edges import edge_prf1, edge_by_label_baseline
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
-from frame2kg_eval.metrics.conformity import compute_conformity_from_directory
+from frame2kg_eval.metrics.conformity import compute_conformity_from_directory, check_file_conformity
 from frame2kg_eval.metrics.timing import manifest_timing
 from frame2kg_eval.metrics.boxes import (box_iou_stats,aggregate_iou_micro,aggregate_iou_macro)
 from frame2kg_eval.utils.logging import logger
 from frame2kg_eval.utils.seeding import seed_matching, MATCHING_SEED
+
+
+def _empty_prf(support: int, fp_penalty: int = 0) -> Dict[str, float]:
+    """Build a zeroed precision/recall/F1 record with optional FP penalty."""
+
+    tp = 0
+    fp = fp_penalty
+    fn = support
+
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "support": support,
+    }
+
+
+def _empty_box_stats() -> Dict[str, float]:
+    """Return a zeroed-out box IoU stats record."""
+
+    return {
+        "mean_iou": 0.0,
+        "median_iou": 0.0,
+        "std_iou": 0.0,
+        "min_iou": 0.0,
+        "max_iou": 0.0,
+        "count": 0,
+        "match_ious": (),
+    }
 
 
 def load_config(config_path: Optional[Path] = None) -> Dict:
@@ -116,83 +152,109 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     manifest_path = pred_dir / "manifest.csv"
     timing_stats = manifest_timing(manifest_path) if manifest_path.exists() else None
     
-    # Prepare output data
-    frame_results = []
-    all_node_metrics = []
-    all_edge_metrics = []
-    all_box_stats = []
-    
-    # Process each frame
+    include_invalid = bool(cfg.get("include_invalid", True))
+    strict_mode = bool(cfg.get("strict_mode", False))
+
+    gt_graphs: Dict[Tuple[str, int], Dict] = {}
+    for video_id, frame_no, graph in gt_adapter.iter_frames():
+        gt_graphs[(video_id, frame_no)] = graph
+
+    frame_results: List[Dict] = []
+    all_node_metrics: List[Dict] = []
+    all_edge_metrics: List[Dict] = []
+    all_box_stats: List[Dict] = []
+
     pred_index = pred_loader.get_index()
-    total_frames = len(pred_index)
-    
+    gt_keys = sorted(gt_graphs.keys())
+    extra_predictions = sorted(set(pred_index.keys()) - set(gt_keys))
+    total_frames = len(gt_keys)
+
+    missing_predictions: List[Tuple[str, int]] = []
+    unusable_predictions: List[Tuple[str, int]] = []
+
     if verbose:
         pbar = tqdm(total=total_frames, desc="Evaluating frames")
-    
-    for (video_id, frame_no), pred_path in sorted(pred_index.items()):
-        # Get predictions
-        pred_graph = pred_loader.get_graph(video_id, frame_no)
-        
-        # Get ground truth
-        gt_graph = gt_adapter.get_graph(video_id, frame_no)
-        
-        if pred_graph is None or gt_graph is None:
-            # Skip frames with missing data
+
+    for video_id, frame_no in gt_keys:
+        gt_graph = gt_graphs[(video_id, frame_no)]
+        g_nodes = gt_graph["nodes"]
+        g_edges = gt_graph["edges"]
+
+        pred_path = pred_index.get((video_id, frame_no))
+        pred_graph = None
+        parsed_json_flag = 0
+        schema_conformant_flag = 0
+
+        if pred_path is None:
+            missing_predictions.append((video_id, frame_no))
+        else:
+            if pred_path.suffix == ".json":
+                is_conformant, _ = check_file_conformity(pred_path)
+                schema_conformant_flag = 1 if is_conformant else 0
+                pred_graph = pred_loader.get_graph(video_id, frame_no)
+                parsed_json_flag = 1 if pred_graph is not None else 0
+                if pred_graph is None:
+                    unusable_predictions.append((video_id, frame_no))
+            else:
+                unusable_predictions.append((video_id, frame_no))
+
+        include_frame = True
+        if pred_graph is None:
+            include_frame = include_invalid or pred_path is None
+
+        if not include_frame:
             if verbose:
                 pbar.update(1)
             continue
-        
-        # Extract nodes and edges
-        p_nodes = pred_graph["nodes"]
-        g_nodes = gt_graph["nodes"]
-        p_edges = pred_graph["edges"]
-        g_edges = gt_graph["edges"]
-        
-        # Node matching
-        match_result = two_stage_node_match(
-            p_nodes, g_nodes,
-            tau=cfg["tau"],
-            alpha=cfg["alpha"],
-            text_mode=cfg["text_mode"],
-            text_fields=tuple(cfg["text_fields"]),
-            text_floor=cfg["text_floor"]
-        )
-        
-        # Node metrics
-        node_metrics = node_prf1(p_nodes, g_nodes, match_result["mapping"])
-        all_node_metrics.append(node_metrics)
 
-        # Matched-pair IoU stats using precomputed IoU matrix when available
-        iou_matrix = match_result.get("matrices", {}).get("iou")
-        box_stats = box_iou_stats(p_nodes, g_nodes, match_result["mapping"], iou_matrix=iou_matrix)
-        all_box_stats.append(box_stats)
-        
-        # Build node ID mapping for edges
-        node_id_mapping = {}
-        for p_idx, g_idx in match_result["mapping"].items():
-            p_id = p_nodes[p_idx]["id"]
-            g_id = g_nodes[g_idx]["id"]
-            node_id_mapping[p_id] = g_id
-        
-        # Edge metrics
-        edge_metrics = edge_prf1(p_edges, g_edges, node_id_mapping, cfg.get("predicate_mode", "exact"))
+        if pred_graph is None:
+            p_nodes = []
+            p_edges = []
+            node_metrics = _empty_prf(len(g_nodes), len(g_nodes) if strict_mode else 0)
+            edge_metrics = _empty_prf(len(g_edges), len(g_edges) if strict_mode else 0)
+            box_stats = _empty_box_stats()
+            edge_baseline_metrics = None
+            if edge_baseline:
+                edge_baseline_metrics = _empty_prf(len(g_edges), len(g_edges) if strict_mode else 0)
+        else:
+            p_nodes = pred_graph["nodes"]
+            p_edges = pred_graph["edges"]
+
+            match_result = two_stage_node_match(
+                p_nodes, g_nodes,
+                tau=cfg["tau"],
+                alpha=cfg["alpha"],
+                text_mode=cfg["text_mode"],
+                text_fields=tuple(cfg["text_fields"]),
+                text_floor=cfg["text_floor"]
+            )
+
+            node_metrics = node_prf1(p_nodes, g_nodes, match_result["mapping"])
+
+            iou_matrix = match_result.get("matrices", {}).get("iou")
+            box_stats = box_iou_stats(p_nodes, g_nodes, match_result["mapping"], iou_matrix=iou_matrix)
+
+            node_id_mapping: Dict[str, str] = {}
+            for p_idx, g_idx in match_result["mapping"].items():
+                p_id = p_nodes[p_idx]["id"]
+                g_id = g_nodes[g_idx]["id"]
+                node_id_mapping[p_id] = g_id
+
+            edge_metrics = edge_prf1(p_edges, g_edges, node_id_mapping, cfg.get("predicate_mode", "exact"))
+
+            edge_baseline_metrics = None
+            if edge_baseline:
+                edge_baseline_metrics = edge_by_label_baseline(p_edges, g_edges, p_nodes, g_nodes)
+
+        all_node_metrics.append(node_metrics)
         all_edge_metrics.append(edge_metrics)
-        
-        # Optional edge baseline
-        edge_baseline_metrics = None
-        if edge_baseline:
-            edge_baseline_metrics = edge_by_label_baseline(p_edges, g_edges, p_nodes, g_nodes)
-        
-        # Check schema conformity for this frame
-        from frame2kg_eval.metrics.conformity import check_file_conformity
-        is_conformant, _ = check_file_conformity(pred_path) if pred_path.suffix == ".json" else (False, None)
-        
-        # Store frame result
+        all_box_stats.append(box_stats)
+
         frame_result = {
             "video_id": video_id,
             "frame_no": frame_no,
-            "parsed_json": 1 if pred_path.suffix == ".json" else 0,
-            "schema_conformant": 1 if is_conformant else 0,
+            "parsed_json": parsed_json_flag,
+            "schema_conformant": schema_conformant_flag,
             "node_tp": node_metrics["tp"],
             "node_fp": node_metrics["fp"],
             "node_fn": node_metrics["fn"],
@@ -205,7 +267,6 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
             "edge_precision": edge_metrics["precision"],
             "edge_recall": edge_metrics["recall"],
             "edge_f1": edge_metrics["f1"],
-            # Matched-pair IoU (box IoU) stats
             "box_mean_iou": box_stats["mean_iou"],
             "box_median_iou": box_stats["median_iou"],
             "box_std_iou": box_stats["std_iou"],
@@ -213,21 +274,28 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
             "box_max_iou": box_stats["max_iou"],
             "box_match_count": box_stats["count"],
         }
-        
-        if edge_baseline_metrics:
+
+        if edge_baseline and edge_baseline_metrics:
             frame_result.update({
                 "edge_baseline_precision": edge_baseline_metrics["precision"],
                 "edge_baseline_recall": edge_baseline_metrics["recall"],
-                "edge_baseline_f1": edge_baseline_metrics["f1"]
+                "edge_baseline_f1": edge_baseline_metrics["f1"],
             })
-        
+
         frame_results.append(frame_result)
-        
+
         if verbose:
             pbar.update(1)
-    
+
     if verbose:
         pbar.close()
+
+    if extra_predictions:
+        logger.warning(f"{len(extra_predictions)} prediction files have no matching ground truth and were ignored.")
+    if missing_predictions:
+        logger.warning(f"Missing predictions for {len(missing_predictions)} frames (treated as empty).")
+    if unusable_predictions:
+        logger.warning(f"Unusable prediction files for {len(unusable_predictions)} frames (treated as empty).")
     
     # Aggregate metrics
     node_micro = aggregate_micro(all_node_metrics)

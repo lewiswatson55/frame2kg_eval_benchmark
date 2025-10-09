@@ -132,6 +132,8 @@ Edges match when:
 
 Matching entry points seed Python, NumPy, and (when available) Torch RNGs to `42` so the assignment stage remains deterministic across runs; adjust via `seed_matching` if required.
 
+Frames with missing or invalid predictions are evaluated as empty outputs so they contribute zero precision/recall; enable `strict_mode` to add an explicit false-positive penalty for those cases.
+
 ## Configuration
 
 Default parameters in `config/defaults.yaml`:

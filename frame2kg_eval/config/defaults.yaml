@@ -18,7 +18,7 @@ dataset_name: lewiswatson/Frame2KG-YC2
 default_split: validation_dev
 
 # Evaluation settings
-include_invalid: false  # Whether to include invalid JSON files in metrics
+include_invalid: true  # Include invalid JSON files in metrics (missing files always count)
 strict_mode: false  # If true, invalid files count as all FPs
 
 # Output settings

@@ -5,7 +5,7 @@ import csv
 import json
 import yaml
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from tqdm import tqdm
 
 from frame2kg_eval.io.preds import PredictionLoader
@@ -21,75 +21,143 @@ from frame2kg_eval.utils.logging import logger
 from frame2kg_eval.utils.seeding import seed_matching, MATCHING_SEED
 
 
-def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
+def _empty_prf(support: int, fp_penalty: int = 0) -> Dict[str, float]:
+    """Return a zeroed metric record with optional FP penalty."""
+
+    tp = 0
+    fp = fp_penalty
+    fn = support
+
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "support": support,
+    }
+
+
+def _empty_box_stats() -> Dict[str, float]:
+    """Return zeroed matched-pair IoU stats."""
+
+    return {
+        "mean_iou": 0.0,
+        "median_iou": 0.0,
+        "std_iou": 0.0,
+        "min_iou": 0.0,
+        "max_iou": 0.0,
+        "count": 0,
+        "match_ious": (),
+    }
+
+
+def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], config: Dict) -> Dict:
     """Evaluate a single prediction run."""
 
-    # Reset RNG state to keep matching deterministic per run
     seed_matching()
 
     pred_loader = PredictionLoader(pred_dir)
-    
-    # Validity statistics
+
     validity_stats = compute_validity_from_directory(pred_dir)
-    
-    # Conformity statistics
     conformity_stats = compute_conformity_from_directory(pred_dir)
-    
-    # Timing statistics
+
     manifest_path = pred_dir / "manifest.csv"
     timing_stats = manifest_timing(manifest_path) if manifest_path.exists() else None
-    
-    # Evaluate frames
-    node_metrics_list = []
-    edge_metrics_list = []
-    box_stats_list = []
-    
-    for (video_id, frame_no), _ in pred_loader.get_index().items():
-        pred_graph = pred_loader.get_graph(video_id, frame_no)
-        gt_graph = gt_adapter.get_graph(video_id, frame_no)
-        
-        if not pred_graph or not gt_graph:
-            continue
-        
-        # Node matching
-        match_result = two_stage_node_match(
-            pred_graph["nodes"], gt_graph["nodes"],
-            tau=config["tau"],
-            alpha=config["alpha"],
-            text_mode=config["text_mode"],
-            text_fields=tuple(config["text_fields"]),
-            text_floor=config["text_floor"]
-        )
-        
-        # Metrics
-        node_metrics = node_prf1(
-            pred_graph["nodes"], gt_graph["nodes"],
-            match_result["mapping"]
-        )
-        node_metrics_list.append(node_metrics)
-        
-        # Edge metrics
-        node_id_mapping = {
-            pred_graph["nodes"][p_idx]["id"]: gt_graph["nodes"][g_idx]["id"]
-            for p_idx, g_idx in match_result["mapping"].items()
-        }
-        
-        edge_metrics = edge_prf1(
-            pred_graph["edges"], gt_graph["edges"],
-            node_id_mapping, config.get("predicate_mode", "exact")
-        )
-        edge_metrics_list.append(edge_metrics)
 
-        # Matched-pair IoU (box IoU) stats (use precomputed IoU matrix)
-        iou_matrix = match_result.get("matrices", {}).get("iou")
-        box_stats = box_iou_stats(pred_graph["nodes"], gt_graph["nodes"], match_result["mapping"], iou_matrix=iou_matrix)
+    include_invalid = bool(config.get("include_invalid", True))
+    strict_mode = bool(config.get("strict_mode", False))
+
+    node_metrics_list: List[Dict] = []
+    edge_metrics_list: List[Dict] = []
+    box_stats_list: List[Dict] = []
+
+    pred_index = pred_loader.get_index()
+    gt_keys = sorted(gt_graphs.keys())
+
+    missing_predictions: List[Tuple[str, int]] = []
+    unusable_predictions: List[Tuple[str, int]] = []
+    extra_predictions = sorted(set(pred_index.keys()) - set(gt_keys))
+
+    for video_id, frame_no in gt_keys:
+        gt_graph = gt_graphs[(video_id, frame_no)]
+        g_nodes = gt_graph["nodes"]
+        g_edges = gt_graph["edges"]
+
+        pred_path = pred_index.get((video_id, frame_no))
+        pred_graph = None
+
+        if pred_path is None:
+            missing_predictions.append((video_id, frame_no))
+        else:
+            if pred_path.suffix == ".json":
+                pred_graph = pred_loader.get_graph(video_id, frame_no)
+                if pred_graph is None:
+                    unusable_predictions.append((video_id, frame_no))
+            else:
+                unusable_predictions.append((video_id, frame_no))
+
+        include_frame = True
+        if pred_graph is None:
+            include_frame = include_invalid or pred_path is None
+
+        if not include_frame:
+            continue
+
+        if pred_graph is None:
+            node_metrics = _empty_prf(len(g_nodes), len(g_nodes) if strict_mode else 0)
+            edge_metrics = _empty_prf(len(g_edges), len(g_edges) if strict_mode else 0)
+            box_stats = _empty_box_stats()
+        else:
+            p_nodes = pred_graph["nodes"]
+            p_edges = pred_graph["edges"]
+
+            match_result = two_stage_node_match(
+                p_nodes, g_nodes,
+                tau=config["tau"],
+                alpha=config["alpha"],
+                text_mode=config["text_mode"],
+                text_fields=tuple(config["text_fields"]),
+                text_floor=config["text_floor"]
+            )
+
+            node_metrics = node_prf1(p_nodes, g_nodes, match_result["mapping"])
+
+            iou_matrix = match_result.get("matrices", {}).get("iou")
+            box_stats = box_iou_stats(p_nodes, g_nodes, match_result["mapping"], iou_matrix=iou_matrix)
+
+            node_id_mapping = {
+                p_nodes[p_idx]["id"]: g_nodes[g_idx]["id"]
+                for p_idx, g_idx in match_result["mapping"].items()
+            }
+
+            edge_metrics = edge_prf1(
+                p_edges,
+                g_edges,
+                node_id_mapping,
+                config.get("predicate_mode", "exact"),
+            )
+
+        node_metrics_list.append(node_metrics)
+        edge_metrics_list.append(edge_metrics)
         box_stats_list.append(box_stats)
-    
-    # Aggregate
+
+    if extra_predictions:
+        logger.warning(f"[{pred_dir}] {len(extra_predictions)} prediction files have no matching ground truth and were ignored.")
+    if missing_predictions:
+        logger.warning(f"[{pred_dir}] Missing predictions for {len(missing_predictions)} frames (treated as empty).")
+    if unusable_predictions:
+        logger.warning(f"[{pred_dir}] Unusable prediction files for {len(unusable_predictions)} frames (treated as empty).")
+
     node_micro = aggregate_micro(node_metrics_list)
     edge_micro = aggregate_micro(edge_metrics_list)
     box_micro = aggregate_iou_micro(box_stats_list)
-    
+
     return {
         "pred_dir": str(pred_dir),
         "validity_rate": validity_stats["validity_rate"],
@@ -107,7 +175,7 @@ def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
         "box_mean_iou": box_micro["mean_iou"],
         "box_median_iou": box_micro["median_iou"],
         "mean_gen_time": timing_stats["mean"] if timing_stats else None,
-        "num_frames": len(node_metrics_list)
+        "num_frames": len(node_metrics_list),
     }
 
 
@@ -173,13 +241,16 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
     # Load ground truth
     logger.info(f"Loading ground truth: {gt}")
     gt_adapter = create_ground_truth_adapter(gt)
+    gt_graphs: Dict[Tuple[str, int], Dict] = {}
+    for video_id, frame_no, graph in gt_adapter.iter_frames():
+        gt_graphs[(video_id, frame_no)] = graph
     
     # Evaluate each run
     results = []
     
     for run_dir in tqdm(run_dirs, desc="Evaluating runs"):
         try:
-            run_result = evaluate_single_run(run_dir, gt_adapter, cfg)
+            run_result = evaluate_single_run(run_dir, gt_graphs, cfg)
             
             # Parse variant and index from path
             path_parts = run_dir.relative_to(pred_root).parts
