@@ -14,6 +14,7 @@ from frame2kg_eval.matching.assign import two_stage_node_match
 from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro
 from frame2kg_eval.metrics.edges import edge_prf1
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
+from frame2kg_eval.metrics.conformity import compute_conformity_from_directory
 from frame2kg_eval.metrics.timing import manifest_timing
 from frame2kg_eval.utils.logging import logger
 
@@ -24,6 +25,9 @@ def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
     
     # Validity statistics
     validity_stats = compute_validity_from_directory(pred_dir)
+    
+    # Conformity statistics
+    conformity_stats = compute_conformity_from_directory(pred_dir)
     
     # Timing statistics
     manifest_path = pred_dir / "manifest.csv"
@@ -78,6 +82,9 @@ def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
         "validity_rate": validity_stats["validity_rate"],
         "valid_count": validity_stats["valid_count"],
         "invalid_count": validity_stats["invalid_count"],
+        "conformity_rate": conformity_stats["conformity_rate_total"],
+        "conformant_count": conformity_stats["conformant_count"],
+        "non_conformant_count": conformity_stats["non_conformant_count"],
         "node_f1": node_micro["f1"],
         "node_precision": node_micro["precision"],
         "node_recall": node_micro["recall"],

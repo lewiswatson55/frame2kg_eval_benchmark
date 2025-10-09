@@ -14,6 +14,7 @@ from frame2kg_eval.matching.assign import two_stage_node_match, compute_edge_map
 from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro, aggregate_macro
 from frame2kg_eval.metrics.edges import edge_prf1, edge_by_label_baseline
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
+from frame2kg_eval.metrics.conformity import compute_conformity_from_directory
 from frame2kg_eval.metrics.timing import manifest_timing
 from frame2kg_eval.utils.logging import logger
 
@@ -100,6 +101,11 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     logger.info(f"Validity: {validity_stats['valid_count']}/{validity_stats['total_count']} "
                 f"({validity_stats['validity_rate']:.1f}%)")
     
+    # Check schema conformity statistics
+    conformity_stats = compute_conformity_from_directory(pred_dir)
+    logger.info(f"Schema Conformity: {conformity_stats['conformant_count']}/{conformity_stats['total_count']} "
+                f"({conformity_stats['conformity_rate_total']:.1f}%)")
+    
     # Check for manifest timing
     manifest_path = pred_dir / "manifest.csv"
     timing_stats = manifest_timing(manifest_path) if manifest_path.exists() else None
@@ -165,11 +171,16 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         if edge_baseline:
             edge_baseline_metrics = edge_by_label_baseline(p_edges, g_edges, p_nodes, g_nodes)
         
+        # Check schema conformity for this frame
+        from frame2kg_eval.metrics.conformity import check_file_conformity
+        is_conformant, _ = check_file_conformity(pred_path) if pred_path.suffix == ".json" else (False, None)
+        
         # Store frame result
         frame_result = {
             "video_id": video_id,
             "frame_no": frame_no,
             "parsed_json": 1 if pred_path.suffix == ".json" else 0,
+            "schema_conformant": 1 if is_conformant else 0,
             "node_tp": node_metrics["tp"],
             "node_fp": node_metrics["fp"],
             "node_fn": node_metrics["fn"],
@@ -212,6 +223,7 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         output_data = {
             "config": cfg,
             "validity": validity_stats,
+            "conformity": conformity_stats,
             "timing": timing_stats,
             "aggregate": {
                 "node_micro": node_micro,

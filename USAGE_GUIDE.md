@@ -107,7 +107,7 @@ Example: `video1.001.json`
     {
       "id": "person1",
       "label": "person",
-      "location": "0.1,0.2,0.3,0.4",
+      "location": "0.1,0.2,0.3,0.4,0.9",
       "attributes": {"appearance": "blue shirt"}
     }
   ],
@@ -123,9 +123,22 @@ Example: `video1.001.json`
 
 ### Location Format
 
-Bounding boxes as normalized coordinates [0,1]:
-- String: `"x1,y1,x2,y2"` or `"x1,y1,x2,y2,confidence"`
-- List/tuple: `[x1, y1, x2, y2]` or `[x1, y1, x2, y2, confidence]`
+Bounding boxes must be normalized coordinates in [0,1] and provided as a string with exactly 5 values:
+- String only: `"x1,y1,x2,y2,confidence"`
+- Constraints: x1 < x2, y1 < y2, and 0 ≤ confidence ≤ 1
+
+### Required Schema Structure
+
+**Nodes** must have:
+- `id` (string): Unique identifier
+- `label` (string): Node type/category
+- `location` (string): "x1,y1,x2,y2,confidence" (floats), normalized to [0,1] with x1<x2 and y1<y2; confidence in [0,1]
+- `attributes` (dict, optional): Additional properties
+
+**Edges** must have:
+- `source` (string): Source node ID
+- `target` (string): Target node ID
+- `predicate` (string): Relationship type
 
 ### Manifest (Optional)
 
@@ -214,6 +227,16 @@ print(f"Node F1: {metrics['f1']:.3f}")
 ### Edge Metrics
 - Edges match when both endpoints map correctly and predicates match
 - Same PRF1 calculation as nodes
+
+### JSON Validity
+- **Validity Rate**: Percentage of files that are valid JSON
+- Checks if files can be parsed as JSON and contain required structure
+
+### Schema Conformity
+- **Conformity Rate**: Percentage of files that conform to the expected schema
+- Validates required fields (id, label, location for nodes; source, target, predicate for edges)
+- Checks field types and structure
+- Separate from JSON validity - valid JSON may not conform to schema
 
 ### Aggregation
 - **Micro**: Sum all TP/FP/FN across frames, then compute metrics
