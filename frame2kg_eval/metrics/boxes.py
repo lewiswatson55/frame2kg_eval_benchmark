@@ -11,6 +11,28 @@ Per-frame outputs include:
 
 from typing import Dict, List, Optional
 import numpy as np
+import warnings
+
+
+def _warn_if_invalid_box(box, node_ctx: str) -> None:
+    """Warn if a single box is invalid (x2<x1 or y2<y1).
+
+    Args:
+        box: Sequence like [x1, y1, x2, y2]
+        node_ctx: Context string to identify the node (e.g., id/type)
+    """
+    if box is None:
+        return
+    try:
+        x1, y1, x2, y2 = box  # type: ignore[misc]
+    except Exception:
+        return
+    if (x2 < x1) or (y2 < y1):
+        warnings.warn(
+            f"Invalid bounding box detected for {node_ctx}: "
+            f"x2<x1 or y2<y1 with box [{x1}, {y1}, {x2}, {y2}]",
+            stacklevel=2,
+        )
 
 
 def box_iou_stats(
@@ -32,6 +54,12 @@ def box_iou_stats(
     """
     ious: List[float] = []
 
+    # Warn about any invalid boxes upfront (both preds and GT), once per node
+    for idx, n in enumerate(p_nodes):
+        _warn_if_invalid_box(n.get("location"), f"pred node '{n.get('id', idx)}'")
+    for idx, n in enumerate(g_nodes):
+        _warn_if_invalid_box(n.get("location"), f"GT node '{n.get('id', idx)}'")
+
     if iou_matrix is not None:
         for p_idx, g_idx in mapping.items():
             val = float(iou_matrix[p_idx, g_idx])
@@ -43,6 +71,7 @@ def box_iou_stats(
         for p_idx, g_idx in mapping.items():
             p_box = p_nodes[p_idx].get("location")
             g_box = g_nodes[g_idx].get("location")
+
             if p_box is not None and g_box is not None:
                 iou = compute_iou(tuple(p_box), tuple(g_box))
                 ious.append(iou)
