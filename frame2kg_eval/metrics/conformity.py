@@ -1,11 +1,11 @@
 """Schema conformity metrics for prediction files."""
 
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import json
 
 
-def check_node_schema(node: Dict[str, Any]) -> tuple[bool, List[str]]:
+def check_node_schema(node: Dict[str, Any]) -> Tuple[bool, List[str]]:
     """Check if a node conforms to the expected schema.
     
     Expected schema:
@@ -72,7 +72,7 @@ def check_node_schema(node: Dict[str, Any]) -> tuple[bool, List[str]]:
     return len(issues) == 0, issues
 
 
-def check_edge_schema(edge: Dict[str, Any]) -> tuple[bool, List[str]]:
+def check_edge_schema(edge: Dict[str, Any]) -> Tuple[bool, List[str]]:
     """Check if an edge conforms to the expected schema.
     
     Expected schema:
@@ -109,7 +109,7 @@ def check_edge_schema(edge: Dict[str, Any]) -> tuple[bool, List[str]]:
     return len(issues) == 0, issues
 
 
-def check_graph_schema(graph: Dict[str, Any]) -> tuple[bool, Dict[str, Any]]:
+def check_graph_schema(graph: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
     """Check if a graph conforms to the expected schema.
     
     Args:
@@ -192,7 +192,7 @@ def check_graph_schema(graph: Dict[str, Any]) -> tuple[bool, Dict[str, Any]]:
     return report["conformant"], report
 
 
-def check_file_conformity(filepath: Path) -> tuple[bool, Optional[Dict[str, Any]]]:
+def check_file_conformity(filepath: Path) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """Check if a file contains schema-conformant JSON.
     
     Args:
