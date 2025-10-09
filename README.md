@@ -9,6 +9,7 @@ Production-ready evaluation framework for Frame-to-Knowledge-Graph (Frame2KG) ta
 - **Comprehensive metrics**: Node & edge precision/recall/F1 with TP/FP/FN counts (micro & macro)
 - **Flexible similarity modes**: TF-IDF, semantic embeddings, or hybrid approaches
 - **Threshold optimization**: Grid search over IoU (τ) and blending (α) parameters
+- **JSON schema conformity**: Validates graph structure against expected schema format
 - **Robust I/O**: Handles various file formats and missing frames gracefully
 - **HuggingFace integration**: Direct support for `lewiswatson/Frame2KG-YC2` dataset
 
@@ -73,26 +74,33 @@ Place prediction files in a directory with naming convention:
 <video_id>.<frame_number>.json
 ```
 
-Each JSON file should contain:
+Each JSON file should conform to the following schema:
 ```json
 {
   "nodes": [
     {
-      "id": "person1",
-      "label": "person",
-      "location": "0.1,0.2,0.3,0.4",
-      "attributes": {"appearance": "blue shirt"}
+      "id": "string",           // Required: unique node identifier
+      "label": "string",         // Required: node type/category
+      "location": "x1,y1,x2,y2,confidence",  // Required string, normalized [0,1]
+      "attributes": {            // Optional: additional properties
+        "key": "value"
+      }
     }
   ],
   "edges": [
     {
-      "source": "person1",
-      "target": "ball1",
-      "predicate": "holding"
+      "source": "nodeId",        // Required: source node ID
+      "target": "nodeId",        // Required: target node ID
+      "predicate": "string"      // Required: relationship type
     }
   ]
 }
 ```
+
+**Note**: The evaluation includes schema conformity checking that validates:
+- Required fields are present (`id`, `label`, `location` for nodes; `source`, `target`, `predicate` for edges)
+- Field types are correct (strings). `location` must be a string with exactly 5 numeric values (x1,y1,x2,y2,confidence) normalized to [0,1] and satisfy x1<x2, y1<y2
+- Structure follows the expected schema
 
 ### Ground Truth
 Supports two modes:
@@ -117,6 +125,7 @@ Edges match when:
 - **Node metrics**: Precision, Recall, F1, TP/FP/FN counts
 - **Edge metrics**: Similar to nodes, with optional edge-by-label baseline
 - **Validity**: JSON parsing success rate
+- **Schema Conformity**: Validates structure against expected graph schema
 - **Timing**: Mean generation time from manifest.csv
 
 ## Configuration
