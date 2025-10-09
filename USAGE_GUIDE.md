@@ -44,6 +44,10 @@ frame2kg-eval \
 
 **Output**: CSV file with per-frame metrics and aggregated results (micro/macro).
 
+Columns now include box closeness statistics:
+- `box_mean_iou`: Mean IoU across matched node pairs (per frame, and summary rows)
+- `box_std_iou`, `box_min_iou`, `box_max_iou`, `box_match_count`
+
 ### 2. frame2kg-sweep - Parameter Optimization
 
 Find optimal τ (IoU threshold) and α (blending weight) parameters.
@@ -208,13 +212,19 @@ match_result = two_stage_node_match(
 )
 
 # Compute metrics
-metrics = node_prf1(
-    pred_graph["nodes"], 
-    gt_graph["nodes"],
-    match_result["mapping"]
-)
+    metrics = node_prf1(
+        pred_graph["nodes"], 
+        gt_graph["nodes"],
+        match_result["mapping"]
+    )
 
 print(f"Node F1: {metrics['f1']:.3f}")
+
+# Box IoU closeness
+from frame2kg_eval.metrics.boxes import box_iou_stats
+iou_matrix = match_result.get("matrices", {}).get("iou")
+box_stats = box_iou_stats(pred_graph["nodes"], gt_graph["nodes"], match_result["mapping"], iou_matrix=iou_matrix)
+print(f"Box IoU mean: {box_stats['mean_iou']:.3f} over {box_stats['count']} matches")
 ```
 
 ## Metrics Explained
@@ -223,6 +233,10 @@ print(f"Node F1: {metrics['f1']:.3f}")
 - **Precision**: TP / (TP + FP) - Fraction of predicted nodes that are correct
 - **Recall**: TP / (TP + FN) - Fraction of ground truth nodes that are found
 - **F1**: Harmonic mean of precision and recall
+
+### Box IoU Closeness
+- **Mean IoU**: Average IoU across all matched node pairs in a frame
+- **Count**: Number of matched node pairs in a frame
 
 ### Edge Metrics
 - Edges match when both endpoints map correctly and predicates match

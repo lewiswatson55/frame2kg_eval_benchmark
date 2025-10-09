@@ -10,6 +10,7 @@ Production-ready evaluation framework for Frame-to-Knowledge-Graph (Frame2KG) ta
 - **Flexible similarity modes**: TF-IDF, semantic embeddings, or hybrid approaches
 - **Threshold optimization**: Grid search over IoU (τ) and blending (α) parameters
 - **JSON schema conformity**: Validates graph structure against expected schema format
+- **Box IoU closeness**: Per-frame mean IoU for matched nodes, plus aggregate micro/macro summaries
 - **Robust I/O**: Handles various file formats and missing frames gracefully
 - **HuggingFace integration**: Direct support for `lewiswatson/Frame2KG-YC2` dataset
 
@@ -126,6 +127,7 @@ Edges match when:
 - **Edge metrics**: Similar to nodes, with optional edge-by-label baseline
 - **Validity**: JSON parsing success rate
 - **Schema Conformity**: Validates structure against expected graph schema
+- **Box IoU closeness**: Mean IoU across matched node pairs (reported per-frame as `box_mean_iou` and in summary rows)
 - **Timing**: Mean generation time from manifest.csv
 
 ## Configuration
