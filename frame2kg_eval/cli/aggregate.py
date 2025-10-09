@@ -16,6 +16,7 @@ from frame2kg_eval.metrics.edges import edge_prf1
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
 from frame2kg_eval.metrics.conformity import compute_conformity_from_directory
 from frame2kg_eval.metrics.timing import manifest_timing
+from frame2kg_eval.metrics.boxes import box_iou_stats, aggregate_iou_micro
 from frame2kg_eval.utils.logging import logger
 
 
@@ -36,6 +37,7 @@ def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
     # Evaluate frames
     node_metrics_list = []
     edge_metrics_list = []
+    box_stats_list = []
     
     for (video_id, frame_no), _ in pred_loader.get_index().items():
         pred_graph = pred_loader.get_graph(video_id, frame_no)
@@ -72,10 +74,16 @@ def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
             node_id_mapping, config.get("predicate_mode", "exact")
         )
         edge_metrics_list.append(edge_metrics)
+
+        # Box IoU stats (use precomputed IoU matrix)
+        iou_matrix = match_result.get("matrices", {}).get("iou")
+        box_stats = box_iou_stats(pred_graph["nodes"], gt_graph["nodes"], match_result["mapping"], iou_matrix=iou_matrix)
+        box_stats_list.append(box_stats)
     
     # Aggregate
     node_micro = aggregate_micro(node_metrics_list)
     edge_micro = aggregate_micro(edge_metrics_list)
+    box_micro = aggregate_iou_micro(box_stats_list)
     
     return {
         "pred_dir": str(pred_dir),
@@ -91,6 +99,7 @@ def evaluate_single_run(pred_dir: Path, gt_adapter, config: Dict) -> Dict:
         "edge_f1": edge_micro["f1"],
         "edge_precision": edge_micro["precision"],
         "edge_recall": edge_micro["recall"],
+        "box_mean_iou": box_micro["mean_iou"],
         "mean_gen_time": timing_stats["mean"] if timing_stats else None,
         "num_frames": len(node_metrics_list)
     }
@@ -190,11 +199,14 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
     output_path = Path(out)
     with open(output_path, 'w', newline='') as f:
         if results:
-            fieldnames = ["variant", "index", "pred_dir", "validity_rate", 
-                         "valid_count", "invalid_count",
-                         "node_f1", "node_precision", "node_recall",
-                         "edge_f1", "edge_precision", "edge_recall",
-                         "mean_gen_time", "num_frames"]
+            fieldnames = [
+                "variant", "index", "pred_dir", "validity_rate", 
+                "valid_count", "invalid_count",
+                "node_f1", "node_precision", "node_recall",
+                "edge_f1", "edge_precision", "edge_recall",
+                "box_mean_iou",
+                "mean_gen_time", "num_frames"
+            ]
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(results)
@@ -207,11 +219,13 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
         avg_node_f1 = sum(r["node_f1"] for r in results) / len(results)
         avg_edge_f1 = sum(r["edge_f1"] for r in results) / len(results)
         avg_validity = sum(r["validity_rate"] for r in results) / len(results)
+        avg_box_iou = sum(r.get("box_mean_iou", 0.0) for r in results) / len(results)
         
         logger.info(f"\nOverall statistics across {len(results)} runs:")
         logger.info(f"  Average Node F1: {avg_node_f1:.3f}")
         logger.info(f"  Average Edge F1: {avg_edge_f1:.3f}")
         logger.info(f"  Average Validity: {avg_validity:.1f}%")
+        logger.info(f"  Average Box IoU (micro): {avg_box_iou:.3f}")
         
         # Best run
         best = results[0]
@@ -219,6 +233,7 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
         logger.info(f"  Node F1: {best['node_f1']:.3f}")
         logger.info(f"  Edge F1: {best['edge_f1']:.3f}")
         logger.info(f"  Validity: {best['validity_rate']:.1f}%")
+        logger.info(f"  Box IoU (micro): {best.get('box_mean_iou', 0.0):.3f}")
 
 
 if __name__ == "__main__":
