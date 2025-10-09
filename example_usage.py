@@ -10,9 +10,13 @@ from frame2kg_eval.metrics.validity import compute_validity_from_directory
 from frame2kg_eval.metrics.conformity import compute_conformity_from_directory, check_graph_schema
 from frame2kg_eval.metrics.boxes import box_iou_stats
 from frame2kg_eval.utils.logging import logger
+from frame2kg_eval.utils.seeding import seed_matching, MATCHING_SEED
 
 
 def main():
+    seed_matching()
+    logger.info(f"Matching seed: {MATCHING_SEED}")
+
     # Example 1: Load and validate predictions
     logger.info("Example 1: Loading and validating predictions")
     
@@ -106,11 +110,11 @@ def main():
         logger.info(f"Edge metrics: P={edge_metrics['precision']:.3f}, "
                    f"R={edge_metrics['recall']:.3f}, F1={edge_metrics['f1']:.3f}")
         
-        # Box IoU closeness stats (how close are the predicted boxes?)
+        # Matched-pair IoU (box IoU) stats (how close are the matched boxes?)
         iou_matrix = match_result.get("matrices", {}).get("iou")
         box_stats = box_iou_stats(pred_graph["nodes"], gt_graph["nodes"], match_result["mapping"], iou_matrix=iou_matrix)
         logger.info(
-            "Box IoU closeness: mean={:.3f}, median={:.3f}, std={:.3f}, min={:.3f}, max={:.3f}, matches={}".format(
+            "Matched-pair IoU (box IoU): mean={:.3f}, median={:.3f}, std={:.3f}, min={:.3f}, max={:.3f}, matches={}".format(
                 box_stats["mean_iou"],
                 box_stats["median_iou"],
                 box_stats["std_iou"],
