@@ -130,7 +130,7 @@ Edges match when:
 - **Matched-pair IoU (box IoU)**: Mean/median IoU across matched node pairs (reported per-frame as `box_mean_iou` / `box_median_iou`). Micro = mean IoU across all matched pairs (weighted by match count); Macro = unweighted mean of per-frame mean IoU.
 - **Timing**: Mean generation time from manifest.csv
 
-Matching entry points seed both Python and NumPy RNGs to `42` so the assignment stage remains deterministic across runs; adjust via `seed_matching` if required.
+Matching entry points seed Python, NumPy, and (when available) Torch RNGs to `42` so the assignment stage remains deterministic across runs; adjust via `seed_matching` if required.
 
 ## Configuration
 

@@ -244,7 +244,7 @@ print(
 - **Micro summary**: Mean IoU across all matched pairs (weighted by match count)
 - **Macro summary**: Unweighted mean of per-frame mean IoU values
 
-CLI entry points seed Python and NumPy RNGs to `42` before matching so repeated evaluations stay deterministic; override with `seed_matching(new_seed)` if you need a different value.
+CLI entry points seed Python, NumPy, and Torch RNGs to `42` before matching so repeated evaluations stay deterministic; override with `seed_matching(new_seed)` if you need a different value.
 
 ### Edge Metrics
 - Edges match when both endpoints map correctly and predicates match
