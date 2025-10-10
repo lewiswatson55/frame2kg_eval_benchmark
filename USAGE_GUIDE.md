@@ -246,6 +246,8 @@ print(
 
 CLI entry points seed Python, NumPy, and Torch RNGs to `42` before matching so repeated evaluations stay deterministic; override with `seed_matching(new_seed)` if you need a different value.
 
+Frames that are missing predictions or contain invalid JSON are scored as empty outputs - set `strict_mode: true` if you need them to contribute false-positive counts as well.
+
 ### Edge Metrics
 - Edges match when both endpoints map correctly and predicates match
 - Same PRF1 calculation as nodes
