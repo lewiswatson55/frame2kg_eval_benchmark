@@ -6,12 +6,12 @@ alpha: 0.7  # Blending weight (IoU vs text similarity)
 
 # Text similarity settings
 text_mode: semantic  # Options: tfidf, semantic, hybrid
-text_fields: [id, label]  # Node fields to use for text similarity
+text_fields: [labels, attributes]  # Node fields to use for text similarity
 text_floor: 0.25  # Minimum text similarity to consider
 model_name: sentence-transformers/all-MiniLM-L6-v2  # Embedding model for semantic mode
 
 # Edge matching settings
-predicate_mode: exact  # Options: exact, semantic
+predicate_mode: normalised  # Options: exact, normalised
 
 # Dataset settings
 dataset_name: lewiswatson/Frame2KG-YC2

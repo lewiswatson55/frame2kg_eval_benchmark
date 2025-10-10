@@ -284,8 +284,8 @@ class TestEdgeMapping:
         assert 1 in edge_mapping
         assert 2 not in edge_mapping  # p4 is not mapped
     
-    def test_edge_mapping_normalized_predicates(self):
-        """Test semantic predicate matching with normalization."""
+    def test_edge_mapping_normalised_predicates(self):
+        """Test normalised predicate matching with normalisation."""
         p_edges = [
             {"source": "p1", "target": "p2", "predicate": "NEXT_TO"},
             {"source": "p2", "target": "p3", "predicate": "is-holding"}
@@ -297,10 +297,10 @@ class TestEdgeMapping:
         
         node_mapping = {"p1": "g1", "p2": "g2", "p3": "g3"}
         
-        # Semantic mode should normalize predicates
-        edge_mapping = compute_edge_mapping(p_edges, g_edges, node_mapping, "semantic")
+        # Normalised mode should normalise predicates
+        edge_mapping = compute_edge_mapping(p_edges, g_edges, node_mapping, "normalised")
         
-        assert len(edge_mapping) == 2  # Both should match after normalization
+        assert len(edge_mapping) == 2  # Both should match after normalisation
     
     def test_edge_mapping_empty(self):
         """Test edge mapping with empty inputs."""

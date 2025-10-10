@@ -18,7 +18,7 @@ def edge_prf1(
         p_edges: List of predicted edges
         g_edges: List of ground truth edges
         node_mapping: Mapping from predicted node IDs to GT node IDs
-        predicate_mode: How to match predicates ("exact" or "semantic")
+        predicate_mode: How to match predicates ("exact" or "normalised")
     
     Returns:
         Dictionary with metrics:
@@ -35,8 +35,10 @@ def edge_prf1(
     for g_edge in g_edges:
         if predicate_mode == "exact":
             pred = g_edge["predicate"]
-        else:
+        elif predicate_mode == "normalised":
             pred = normalise_predicate(g_edge["predicate"])
+        else:
+            raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
         
         sig = (g_edge["source"], g_edge["target"], pred)
         gt_edge_sigs.add(sig)
@@ -59,8 +61,10 @@ def edge_prf1(
         
         if predicate_mode == "exact":
             pred = p_edge["predicate"]
-        else:
+        elif predicate_mode == "normalised":
             pred = normalise_predicate(p_edge["predicate"])
+        else:
+            raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
         
         # Check if this edge exists in GT
         sig = (mapped_src, mapped_tgt, pred)

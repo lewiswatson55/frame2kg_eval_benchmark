@@ -133,7 +133,7 @@ def compute_edge_mapping(
         p_edges: Predicted edges
         g_edges: Ground truth edges
         node_mapping: Mapping from predicted node IDs to GT node IDs
-        predicate_mode: How to match predicates ("exact" or "semantic")
+        predicate_mode: How to match predicates ("exact" or "normalised")
     
     Returns:
         Dict mapping predicted edge indices to GT edge indices
@@ -145,10 +145,12 @@ def compute_edge_mapping(
     for j, g_edge in enumerate(g_edges):
         if predicate_mode == "exact":
             pred_key = g_edge["predicate"]
-        else:
-            # Normalize for semantic matching
+        elif predicate_mode == "normalised":
+            # Normalise for lexical matching
             from frame2kg_eval.utils.normalise import normalise_predicate
             pred_key = normalise_predicate(g_edge["predicate"])
+        else:
+            raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
         
         sig = (g_edge["source"], g_edge["target"], pred_key)
         gt_edge_sigs[sig] = j
@@ -167,9 +169,11 @@ def compute_edge_mapping(
         
         if predicate_mode == "exact":
             pred_key = p_edge["predicate"]
-        else:
+        elif predicate_mode == "normalised":
             from frame2kg_eval.utils.normalise import normalise_predicate
             pred_key = normalise_predicate(p_edge["predicate"])
+        else:
+            raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
         
         # Look for matching GT edge
         sig = (mapped_src, mapped_tgt, pred_key)

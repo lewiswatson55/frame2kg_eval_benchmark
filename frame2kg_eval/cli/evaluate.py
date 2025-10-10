@@ -76,7 +76,7 @@ def load_config(config_path: Optional[Path] = None) -> Dict:
             "text_fields": ["id", "label"],
             "text_floor": 0.25,
             "model_name": "sentence-transformers/all-MiniLM-L6-v2",
-            "predicate_mode": "exact"
+            "predicate_mode": "normalised"
         }
     
     return config

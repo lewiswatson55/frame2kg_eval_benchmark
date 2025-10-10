@@ -120,7 +120,9 @@ Supports two modes:
 ### Edge Scoring
 Edges match when:
 - Both endpoints map through node assignment
-- Predicates are equal (exact or semantic match)
+- Predicates are equal (exact or normalised match)
+
+Normalised comparison lowercases and strips punctuation so common formatting variants (for example `next-to` vs `NEXT_TO`) line up, while deliberately avoiding broader semantic embeddings that tend to conflate genuinely distinct relation labels in this domain.
 
 ### Metrics
 - **Node metrics**: Precision, Recall, F1, TP/FP/FN counts
@@ -144,6 +146,7 @@ text_mode: semantic
 text_fields: [id, label]  # Add more fields (e.g. attributes, description) to include in similarity
 text_floor: 0.25
 model_name: sentence-transformers/all-MiniLM-L6-v2
+predicate_mode: normalised
 ```
 
 Specify as many `text_fields` as required, nested containers (like attribute dictionaries or lists of tags) are flattened before text similarity is computed.
