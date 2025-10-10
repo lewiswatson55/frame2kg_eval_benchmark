@@ -211,7 +211,14 @@ def compute_edge_mapping(
             if similarity.size == 0:
                 continue
 
+            similarity = np.asarray(similarity, dtype=np.float32)
+            valid_mask = similarity >= semantic_threshold
+
+            if not np.any(valid_mask):
+                continue
+
             cost_matrix = 1.0 - similarity
+            cost_matrix[~valid_mask] = 2.0  # Larger than any valid cost (since similarity <= 1.0)
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
             for r_idx, c_idx in zip(row_ind, col_ind):

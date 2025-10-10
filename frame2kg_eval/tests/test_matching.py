@@ -347,6 +347,46 @@ class TestEdgeMapping:
         assert edge_mapping[0] == 0
         assert edge_mapping[1] == 1
 
+    def test_edge_mapping_semantic_threshold_masking(self, monkeypatch):
+        """Ensure low-similarity pairs are excluded before assignment."""
+        p_edges = [
+            {"source": "p1", "target": "p2", "predicate": "near"},
+            {"source": "p1", "target": "p2", "predicate": "holding"},
+        ]
+        g_edges = [
+            {"source": "g1", "target": "g2", "predicate": "near"},
+            {"source": "g1", "target": "g2", "predicate": "holding"},
+        ]
+
+        node_mapping = {"p1": "g1", "p2": "g2"}
+
+        similarity_matrix = np.array(
+            [
+                [0.84, 0.79],
+                [0.78, 0.60],
+            ],
+            dtype=np.float32,
+        )
+
+        def fake_semantic_similarity(self, texts1, texts2):
+            return similarity_matrix
+
+        monkeypatch.setattr(
+            TextSimilarityComputer,
+            "compute_semantic_similarity",
+            fake_semantic_similarity,
+        )
+
+        edge_mapping = compute_edge_mapping(
+            p_edges,
+            g_edges,
+            node_mapping,
+            "semantic",
+            semantic_threshold=0.8,
+        )
+
+        assert edge_mapping == {0: 0}
+
     def test_edge_mapping_empty(self):
         """Test edge mapping with empty inputs."""
         node_mapping = {"p1": "g1"}
