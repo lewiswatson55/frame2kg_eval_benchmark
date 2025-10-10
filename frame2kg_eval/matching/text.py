@@ -43,28 +43,38 @@ class TextSimilarityComputer:
             Concatenated normalized text
         """
         parts = []
-        
+
+        def iter_leaf_values(value):
+            """Yield terminal values from nested containers."""
+            if isinstance(value, dict):
+                for item in value.values():
+                    yield from iter_leaf_values(item)
+            elif isinstance(value, (list, tuple, set)):
+                for item in value:
+                    yield from iter_leaf_values(item)
+            else:
+                yield value
+
         for field in fields:
             value = node.get(field, "")
-            
-            # Special handling for ID field - remove digits
-            if field == "id":
-                normalized = normalise_id(value)
-            else:
-                normalized = normalise_label(value)
-            
-            if normalized:
-                parts.append(normalized)
-        
+            normaliser = normalise_id if field == "id" else normalise_label
+
+            for leaf in iter_leaf_values(value):
+                normalized = normaliser(leaf)
+                if normalized:
+                    parts.append(normalized)
+
         # Also include attribute values if present
-        attrs = node.get("attributes", {})
-        if isinstance(attrs, dict):
-            for key in ["appearance", "size", "color"]:
-                if key in attrs:
-                    normalized = normalise_label(attrs[key])
-                    if normalized:
-                        parts.append(normalized)
-        
+        if "attributes" not in fields:
+            attrs = node.get("attributes", {})
+            if isinstance(attrs, dict):
+                for key in ["appearance", "size", "color"]:
+                    if key in attrs:
+                        for leaf in iter_leaf_values(attrs[key]):
+                            normalized = normalise_label(leaf)
+                            if normalized:
+                                parts.append(normalized)
+
         return " ".join(parts)
     
     def compute_tfidf_similarity(self, texts1: List[str], texts2: List[str]) -> np.ndarray:

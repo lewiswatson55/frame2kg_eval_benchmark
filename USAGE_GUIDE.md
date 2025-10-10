@@ -180,11 +180,13 @@ Create a YAML configuration file to set defaults:
 tau: 0.3
 alpha: 0.7
 text_mode: semantic
-text_fields: [id, label]
+text_fields: [id, label]  # Extend with attributes, or other node datapoints, etc. as needed
 text_floor: 0.25
 model_name: sentence-transformers/all-MiniLM-L6-v2
 predicate_mode: exact
 ```
+
+The matcher handles any number of `text_fields`; nested containers (lists, dicts) are flattened so attribute dictionaries can be included directly.
 
 Use with: `--config config.yaml`
 
