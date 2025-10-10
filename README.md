@@ -141,10 +141,12 @@ Default parameters in `config/defaults.yaml`:
 tau: 0.3
 alpha: 0.7
 text_mode: semantic
-text_fields: [id, label]
+text_fields: [id, label]  # Add more fields (e.g. attributes, description) to include in similarity
 text_floor: 0.25
 model_name: sentence-transformers/all-MiniLM-L6-v2
 ```
+
+Specify as many `text_fields` as required, nested containers (like attribute dictionaries or lists of tags) are flattened before text similarity is computed.
 
 ## Python API
 

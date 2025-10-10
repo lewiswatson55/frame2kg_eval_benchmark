@@ -137,7 +137,69 @@ class TestTwoStageMatching:
         assert len(result["mapping"]) == 0
         assert 0 in result["unmatched_pred"]
         assert 0 in result["unmatched_gt"]
-    
+
+    def test_text_fields_with_attributes(self):
+        """Ensure attribute fields contribute to text similarity when requested."""
+        p_nodes = [
+            {
+                "id": "pred_green",
+                "label": "person",
+                "description": {"short": "Green jacket athlete"},
+                "attributes": {
+                    "appearance": ["green jacket", "running"],
+                    "color": "green"
+                },
+                "location": [0.1, 0.1, 0.3, 0.3]
+            },
+            {
+                "id": "pred_red",
+                "label": "person",
+                "description": {"short": "Red jacket athlete"},
+                "attributes": {
+                    "appearance": ["red jacket", "jumping"],
+                    "color": "red"
+                },
+                "location": [0.5, 0.5, 0.7, 0.7]
+            },
+        ]
+
+        g_nodes = [
+            {
+                "id": "gt_green",
+                "label": "person",
+                "description": {"short": "Athlete wearing green jacket"},
+                "attributes": {
+                    "appearance": "green jacket",
+                    "color": "green"
+                },
+                "location": [0.1, 0.1, 0.3, 0.3]
+            },
+            {
+                "id": "gt_red",
+                "label": "person",
+                "description": {"short": "Athlete wearing red jacket"},
+                "attributes": {
+                    "appearance": "red jacket",
+                    "color": "red"
+                },
+                "location": [0.5, 0.5, 0.7, 0.7]
+            },
+        ]
+
+        result = two_stage_node_match(
+            p_nodes,
+            g_nodes,
+            tau=0.3,
+            alpha=0.4,
+            text_mode="tfidf",
+            text_fields=("label", "attributes", "description"),
+            text_floor=0.1,
+        )
+
+        assert len(result["mapping"]) == 2
+        assert result["mapping"][0] == 0
+        assert result["mapping"][1] == 1
+
     def test_matrices_output(self):
         """Test that output matrices have correct shape and values."""
         p_nodes = [
