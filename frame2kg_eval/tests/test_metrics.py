@@ -1,6 +1,9 @@
 """Tests for metrics computation."""
 
+import numpy as np
 import pytest
+
+from frame2kg_eval.matching.text import TextSimilarityComputer
 from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro, aggregate_macro
 from frame2kg_eval.metrics.edges import edge_prf1, edge_by_label_baseline
 
@@ -140,6 +143,61 @@ class TestEdgeMetrics:
         assert metrics["fn"] == 0
         assert metrics["precision"] == 1.0
         assert metrics["recall"] == 1.0
+
+    def test_edge_prf1_semantic(self, monkeypatch):
+        p_edges = [
+            {"source": "p1", "target": "p2", "predicate": "next to"},
+            {"source": "p2", "target": "p3", "predicate": "holding"},
+        ]
+        g_edges = [
+            {"source": "g1", "target": "g2", "predicate": "beside"},
+            {"source": "g2", "target": "g3", "predicate": "grasping"},
+        ]
+        node_mapping = {"p1": "g1", "p2": "g2", "p3": "g3"}
+
+        score_lookup = {
+            ("next to", "beside"): 0.92,
+            ("next to", "grasping"): 0.10,
+            ("holding", "beside"): 0.25,
+            ("holding", "grasping"): 0.88,
+        }
+
+        def fake_semantic_similarity(self, texts1, texts2):
+            matrix = np.zeros((len(texts1), len(texts2)), dtype=np.float32)
+            for row, text1 in enumerate(texts1):
+                for col, text2 in enumerate(texts2):
+                    matrix[row, col] = score_lookup.get((text1, text2), 0.0)
+            return matrix
+
+        monkeypatch.setattr(
+            TextSimilarityComputer,
+            "compute_semantic_similarity",
+            fake_semantic_similarity,
+        )
+
+        metrics = edge_prf1(
+            p_edges,
+            g_edges,
+            node_mapping,
+            "semantic",
+            semantic_threshold=0.8,
+        )
+
+        assert metrics["tp"] == 2
+        assert metrics["fp"] == 0
+        assert metrics["fn"] == 0
+
+        strict_metrics = edge_prf1(
+            p_edges,
+            g_edges,
+            node_mapping,
+            "semantic",
+            semantic_threshold=0.95,
+        )
+
+        assert strict_metrics["tp"] == 0
+        assert strict_metrics["fp"] == len(p_edges)
+        assert strict_metrics["fn"] == len(g_edges)
 
 
 if __name__ == "__main__":
