@@ -2,7 +2,6 @@
 
 import sys
 from datetime import datetime
-from typing import Optional
 
 
 class Logger:
@@ -26,11 +25,21 @@ class Logger:
             return f"{self.COLORS[color]}{text}{self.COLORS['reset']}"
         return text
     
-    def info(self, message: str):
+    def info(self, message: str, *, use_tqdm: bool = False):
         """Log info message."""
         timestamp = datetime.now().strftime("%H:%M:%S")
         prefix = self._color(f"[{timestamp}] INFO:", "blue")
-        print(f"{prefix} {message}")
+        formatted = f"{prefix} {message}"
+
+        if use_tqdm:
+            try:
+                from tqdm.auto import tqdm  # pylint: disable=import-outside-toplevel
+                tqdm.write(formatted)
+                return
+            except ImportError:
+                pass
+
+        print(formatted)
     
     def success(self, message: str):
         """Log success message."""

@@ -2,7 +2,37 @@
 
 import numpy as np
 from typing import Dict, List, Optional, Tuple
+from frame2kg_eval.utils.logging import logger
 from frame2kg_eval.utils.normalise import normalise_label, normalise_id
+
+
+_SEMANTIC_DEVICE_MESSAGE_EMITTED = False
+
+
+def _preferred_devices() -> List[str]:
+    """Return devices to try for semantic models ordered by preference."""
+    try:
+        import torch
+    except ImportError:
+        return ["cpu"]
+
+    devices: List[str] = []
+    mps_backend = getattr(torch.backends, "mps", None)
+    if mps_backend and getattr(mps_backend, "is_available", lambda: False)():
+        if getattr(mps_backend, "is_built", lambda: True)():
+            devices.append("mps")
+    if torch.cuda.is_available():
+        devices.append("cuda")
+    devices.append("cpu")
+    return devices
+
+
+def _log_device_once(device: str) -> None:
+    """Print the device used for semantic models a single time per run."""
+    global _SEMANTIC_DEVICE_MESSAGE_EMITTED
+    if not _SEMANTIC_DEVICE_MESSAGE_EMITTED:
+        logger.info(f"SentenceTransformer using device: {device}", use_tqdm=True)
+        _SEMANTIC_DEVICE_MESSAGE_EMITTED = True
 
 
 class TextSimilarityComputer:
@@ -25,7 +55,20 @@ class TextSimilarityComputer:
         if self._semantic_model is None:
             try:
                 from sentence_transformers import SentenceTransformer
-                self._semantic_model = SentenceTransformer(self.model_name)
+                last_error = None
+                for device in _preferred_devices():
+                    try:
+                        self._semantic_model = SentenceTransformer(
+                            self.model_name, device=device
+                        )
+                        _log_device_once(device)
+                        break
+                    except Exception as error:
+                        last_error = error
+                        self._semantic_model = None
+                        continue
+                if self._semantic_model is None and last_error is not None:
+                    raise last_error
             except ImportError:
                 raise ImportError(
                     "sentence-transformers required for semantic similarity. "
