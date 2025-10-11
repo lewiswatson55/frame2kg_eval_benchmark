@@ -183,10 +183,11 @@ text_mode: semantic
 text_fields: [id, label]  # Extend with attributes, or other node datapoints, etc. as needed
 text_floor: 0.25
 model_name: sentence-transformers/all-MiniLM-L6-v2
-predicate_mode: exact
+predicate_mode: normalised  # Use exact for strict string equality, normalised for with normalisation, or semantic for embeddings (experimental - not used for frame2kg dataset eval)
+predicate_semantic_threshold: 0.6
 ```
 
-The matcher handles any number of `text_fields`; nested containers (lists, dicts) are flattened so attribute dictionaries can be included directly.
+The matcher handles any number of `text_fields`; nested containers (lists, dicts) are flattened so attribute dictionaries can be included directly. Switching `predicate_mode` to `semantic` engages sentence-level predicate matching with the same embedding model and threshold defined above.
 
 Use with: `--config config.yaml`
 
@@ -251,7 +252,7 @@ CLI entry points seed Python, NumPy, and Torch RNGs to `42` before matching so r
 Frames that are missing predictions or contain invalid JSON are scored as empty outputs - set `strict_mode: true` if you need them to contribute false-positive counts as well.
 
 ### Edge Metrics
-- Edges match when both endpoints map correctly and predicates match
+- Edges match when both endpoints map correctly and predicates match (using exact or normalised lexical comparison)
 - Same PRF1 calculation as nodes
 
 ### JSON Validity

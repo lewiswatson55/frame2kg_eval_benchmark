@@ -120,7 +120,9 @@ Supports two modes:
 ### Edge Scoring
 Edges match when:
 - Both endpoints map through node assignment
-- Predicates are equal (exact or semantic match)
+- Predicates are equal (exact or normalised match)
+
+Normalised comparison lowercases and strips punctuation so common formatting variants (for example `next-to` vs `NEXT_TO`) line up, while deliberately avoiding broader semantic embeddings that tend to conflate genuinely distinct relation labels in this domain.
 
 ### Metrics
 - **Node metrics**: Precision, Recall, F1, TP/FP/FN counts
@@ -141,12 +143,17 @@ Default parameters in `config/defaults.yaml`:
 tau: 0.3
 alpha: 0.7
 text_mode: semantic
-text_fields: [id, label]  # Add more fields (e.g. attributes, description) to include in similarity
+text_fields: [label, attributes]  # Add more fields (e.g. attributes, description) to include in similarity
 text_floor: 0.25
 model_name: sentence-transformers/all-MiniLM-L6-v2
+predicate_mode: normalised
+predicate_semantic_threshold: 0.6
 ```
 
 Specify as many `text_fields` as required, nested containers (like attribute dictionaries or lists of tags) are flattened before text similarity is computed.
+
+Edge semantic predicate mode is experimental. Disabled by default due to higher cost and limited benefit on current dataset.
+Set `predicate_mode` to `semantic` to score edge predicates using the same sentence embedding model as node matching, tweak `predicate_semantic_threshold` to tighten or relax the similarity requirement.
 
 ## Python API
 
