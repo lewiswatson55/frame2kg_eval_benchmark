@@ -237,6 +237,10 @@ def compute_edge_mapping(
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
             for r_idx, c_idx in zip(row_ind, col_ind):
+                # Skip assignments that fell back to the synthetic high cost (no viable match).
+                if cost_matrix[r_idx, c_idx] >= LARGE_COST:
+                    continue
+
                 # Translate the reduced matrix coordinates back to original edge indexes.
                 pred_edge_idx = preds[valid_rows[r_idx]][0]
                 gt_edge_idx = gt_candidates[valid_cols[c_idx]][0]
