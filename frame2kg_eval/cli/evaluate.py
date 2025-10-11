@@ -213,6 +213,8 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 pbar.update(1)
             continue
 
+        composite_metrics = None
+
         if pred_graph is None:
             p_nodes = []
             p_edges = []
@@ -260,7 +262,6 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 edge_baseline_metrics = edge_by_label_baseline(p_edges, g_edges, p_nodes, g_nodes)
             
             # Compute composite diagnostics if requested
-            composite_metrics = None
             if composite_diagnostics and pred_graph is not None:
                 # Reuse text computer from matching if available
                 text_computer = match_result.get("text_computer")
