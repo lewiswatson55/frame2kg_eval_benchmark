@@ -3,10 +3,14 @@
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple
 
+import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from frame2kg_eval.matching.text import TextSimilarityComputer
 from frame2kg_eval.utils.normalise import normalise_predicate
+
+
+LARGE_COST = 1e6 # for edge predicate semantic match
 
 
 def edge_prf1(
@@ -115,20 +119,42 @@ def edge_prf1(
             if not pred_texts or not gt_texts:
                 continue
 
+            # Compute predicate similarities once the endpoints align.
             similarity = text_computer.compute_semantic_similarity(pred_texts, gt_texts)
             if similarity.size == 0:
                 continue
 
-            cost_matrix = 1.0 - similarity
+            similarity = np.clip(similarity, -1.0, 1.0).astype(np.float32, copy=False)
+            valid_mask = similarity >= semantic_threshold
+
+            valid_rows = np.where(valid_mask.any(axis=1))[0]
+            valid_cols = np.where(valid_mask.any(axis=0))[0]
+
+            if valid_rows.size == 0 or valid_cols.size == 0:
+                continue
+
+            sub_similarity = similarity[np.ix_(valid_rows, valid_cols)]
+            sub_valid_mask = valid_mask[np.ix_(valid_rows, valid_cols)]
+
+            if sub_similarity.size == 0:
+                continue
+
+            cost_matrix = 1.0 - sub_similarity
+            # Stop Hungarian from selecting below-threshold pairs altogether.
+            cost_matrix[~sub_valid_mask] = LARGE_COST
+
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
             for r_idx, c_idx in zip(row_ind, col_ind):
-                score = float(similarity[r_idx, c_idx])
-                if score >= semantic_threshold:
-                    pred_edge_idx = preds[r_idx][0]
-                    gt_edge_idx = gt_candidates[c_idx][0]
-                    matched_pred_edges.add(pred_edge_idx)
-                    matched_gt_edges.add(gt_edge_idx)
+                # Guard against solver assignments that only satisfy the large-cost fallback.
+                if cost_matrix[r_idx, c_idx] >= LARGE_COST:
+                    continue
+
+                # Map the reduced indices back to the original edge positions.
+                pred_edge_idx = preds[valid_rows[r_idx]][0]
+                gt_edge_idx = gt_candidates[valid_cols[c_idx]][0]
+                matched_pred_edges.add(pred_edge_idx)
+                matched_gt_edges.add(gt_edge_idx)
 
         tp = len(matched_pred_edges)
         fp = len(p_edges) - tp

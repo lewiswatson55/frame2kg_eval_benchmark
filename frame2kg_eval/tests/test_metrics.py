@@ -199,6 +199,46 @@ class TestEdgeMetrics:
         assert strict_metrics["fp"] == len(p_edges)
         assert strict_metrics["fn"] == len(g_edges)
 
+    def test_edge_prf1_semantic_threshold_masking(self, monkeypatch):
+        p_edges = [
+            {"source": "p1", "target": "p2", "predicate": "near"},
+            {"source": "p1", "target": "p2", "predicate": "holding"},
+        ]
+        g_edges = [
+            {"source": "g1", "target": "g2", "predicate": "near"},
+            {"source": "g1", "target": "g2", "predicate": "holding"},
+        ]
+        node_mapping = {"p1": "g1", "p2": "g2"}
+
+        similarity_matrix = np.array(
+            [
+                [0.84, 0.79],
+                [0.78, 0.60],
+            ],
+            dtype=np.float32,
+        )
+
+        def fake_semantic_similarity(self, texts1, texts2):
+            return similarity_matrix
+
+        monkeypatch.setattr(
+            TextSimilarityComputer,
+            "compute_semantic_similarity",
+            fake_semantic_similarity,
+        )
+
+        metrics = edge_prf1(
+            p_edges,
+            g_edges,
+            node_mapping,
+            "semantic",
+            semantic_threshold=0.8,
+        )
+
+        assert metrics["tp"] == 1
+        assert metrics["fp"] == 1
+        assert metrics["fn"] == 1
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
