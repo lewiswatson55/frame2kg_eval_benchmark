@@ -146,6 +146,10 @@ def edge_prf1(
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
             for r_idx, c_idx in zip(row_ind, col_ind):
+                # Guard against solver assignments that only satisfy the large-cost fallback.
+                if cost_matrix[r_idx, c_idx] >= LARGE_COST:
+                    continue
+
                 # Map the reduced indices back to the original edge positions.
                 pred_edge_idx = preds[valid_rows[r_idx]][0]
                 gt_edge_idx = gt_candidates[valid_cols[c_idx]][0]
