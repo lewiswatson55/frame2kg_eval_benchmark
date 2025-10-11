@@ -298,8 +298,11 @@ def find_composite_groups(
                     candidate_texts, anchor_texts, text_computer, beta
                 )
                 
-                # Deterministic tie-breaking: prefer lower index
-                if score > next_score + eps or (abs(score - next_score - eps) < 1e-9 and cand_idx < (next_pick if next_pick else float('inf'))):
+                # Deterministic tie-breaking: prefer lower index (including candidate 0)
+                if score > next_score + eps or (
+                    abs(score - next_score - eps) < 1e-9
+                    and cand_idx < (next_pick if next_pick is not None else float('inf'))
+                ):
                     improved = True
                     next_pick = cand_idx
                     next_score = score
