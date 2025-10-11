@@ -11,6 +11,7 @@ Production-ready evaluation framework for Frame-to-Knowledge-Graph (Frame2KG) ta
 - **Threshold optimization**: Grid search over IoU (τ) and blending (α) parameters
 - **JSON schema conformity**: Validates graph structure against expected schema format
 - **Matched-pair IoU (box IoU)**: Per-frame mean IoU for matched nodes, with micro (match-weighted) and macro (per-frame mean) summaries
+- **Composite diagnostics** (optional): Explains FN/FP from granularity mismatches (e.g., "fruit_basket" vs "apple+banana+orange") without changing primary F1
 - **Robust I/O**: Handles various file formats and missing frames gracefully
 - **HuggingFace integration**: Direct support for `lewiswatson/Frame2KG-YC2` dataset
 
@@ -35,6 +36,15 @@ frame2kg-eval \
   --gt hf:lewiswatson/Frame2KG-YC2:validation_dev \
   --tau 0.3 --alpha 0.7 \
   --text-mode semantic \
+  --out results.csv
+
+# With composite diagnostics (optional)
+frame2kg-eval \
+  --pred-dir ./predictions/model-v1/run1 \
+  --gt hf:lewiswatson/Frame2KG-YC2:validation_dev \
+  --tau 0.3 --alpha 0.7 \
+  --text-mode semantic \
+  --composite-diagnostics \
   --out results.csv
 ```
 
@@ -131,6 +141,7 @@ Normalised comparison lowercases and strips punctuation so common formatting var
 - **Schema Conformity**: Validates structure against expected graph schema
 - **Matched-pair IoU (box IoU)**: Mean/median IoU across matched node pairs (reported per-frame as `box_mean_iou` / `box_median_iou`). Micro = mean IoU across all matched pairs (weighted by match count); Macro = unweighted mean of per-frame mean IoU.
 - **Timing**: Mean generation time from manifest.csv
+- **Composite Diagnostics** (optional): Explains what % of FN/FP are due to compositional mismatches. Reports `composite_hits_gt` (many preds→one GT) and `composite_hits_pred` (many GTs→one pred). Does not affect primary F1 scores.
 
 Matching entry points seed Python, NumPy, and (when available) Torch RNGs to `42` so the assignment stage remains deterministic across runs; adjust via `seed_matching` if required.
 
