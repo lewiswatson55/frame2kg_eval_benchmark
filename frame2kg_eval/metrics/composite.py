@@ -148,10 +148,24 @@ def compute_composite_score(
     text_score = 0.0
     if group_text_list and anchor_text:
         combined_group_text = " ".join(group_text_list)
-        # Use semantic similarity for composite matching
-        similarity_matrix = text_computer.compute_semantic_similarity(
-            [combined_group_text], [anchor_text]
-        )
+        text_mode = getattr(text_computer, "mode", "semantic")
+
+        if text_mode == "semantic":
+            similarity_matrix = text_computer.compute_semantic_similarity(
+                [combined_group_text], [anchor_text]
+            )
+        elif text_mode == "hybrid":
+            tfidf_sim = text_computer.compute_tfidf_similarity(
+                [combined_group_text], [anchor_text]
+            )
+            semantic_sim = text_computer.compute_semantic_similarity(
+                [combined_group_text], [anchor_text]
+            )
+            similarity_matrix = (tfidf_sim + semantic_sim) / 2
+        else:
+            similarity_matrix = text_computer.compute_tfidf_similarity(
+                [combined_group_text], [anchor_text]
+            )
         # Clamp cosine similarity to [-1, 1]
         text_score = float(np.clip(similarity_matrix[0, 0], -1.0, 1.0))
     
