@@ -351,12 +351,18 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         # Calculate overall explained percentages
         total_fn = node_micro["fn"]
         total_fp = node_micro["fp"]
-        
+
         # Calculate means of per-frame statistics
-        avg_group_size_gt = np.mean([m.get("avg_group_size_gt", 0) for m in all_composite_metrics if m]) if all_composite_metrics else 0.0
-        avg_group_size_pred = np.mean([m.get("avg_group_size_pred", 0) for m in all_composite_metrics if m]) if all_composite_metrics else 0.0
-        mean_composite_score_gt = np.mean([m.get("mean_composite_score_gt", 0) for m in all_composite_metrics if m]) if all_composite_metrics else 0.0
-        mean_composite_score_pred = np.mean([m.get("mean_composite_score_pred", 0) for m in all_composite_metrics if m]) if all_composite_metrics else 0.0
+        valid_composite_metrics = [m for m in all_composite_metrics if m]
+
+        def mean_or_zero(metric_key: str) -> float:
+            metric_values = [m.get(metric_key, 0) for m in valid_composite_metrics]
+            return float(np.mean(metric_values)) if metric_values else 0.0
+
+        avg_group_size_gt = mean_or_zero("avg_group_size_gt")
+        avg_group_size_pred = mean_or_zero("avg_group_size_pred")
+        mean_composite_score_gt = mean_or_zero("mean_composite_score_gt")
+        mean_composite_score_pred = mean_or_zero("mean_composite_score_pred")
         
         composite_summary = {
             "total_composite_gt_hits": total_gt_hits,
