@@ -6,6 +6,7 @@ import json
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import numpy as np
 from tqdm import tqdm
 
 from frame2kg_eval.io.preds import PredictionLoader
@@ -17,6 +18,7 @@ from frame2kg_eval.metrics.validity import compute_validity_from_directory
 from frame2kg_eval.metrics.conformity import compute_conformity_from_directory, check_file_conformity
 from frame2kg_eval.metrics.timing import manifest_timing
 from frame2kg_eval.metrics.boxes import (box_iou_stats,aggregate_iou_micro,aggregate_iou_macro)
+from frame2kg_eval.metrics.composite import composite_diagnostics
 from frame2kg_eval.utils.logging import logger
 from frame2kg_eval.utils.seeding import seed_matching, MATCHING_SEED
 
@@ -104,10 +106,12 @@ def load_config(config_path: Optional[Path] = None) -> Dict:
               help="Configuration file path")
 @click.option("--edge-baseline/--no-edge-baseline", default=False,
               help="Include edge-by-label baseline metrics")
+@click.option("--composite-diagnostics/--no-composite-diagnostics", default=False,
+              help="Include composite-aware diagnostic metrics (does not affect primary F1)")
 @click.option("--verbose/--quiet", default=True,
               help="Verbose output")
 def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, config, 
-         edge_baseline, verbose):
+         edge_baseline, composite_diagnostics, verbose):
     """Evaluate Frame2KG predictions against ground truth."""
     
     # Load configuration
@@ -164,6 +168,7 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     all_node_metrics: List[Dict] = []
     all_edge_metrics: List[Dict] = []
     all_box_stats: List[Dict] = []
+    all_composite_metrics: Optional[List[Dict]] = [] if composite_diagnostics else None
 
     pred_index = pred_loader.get_index()
     gt_keys = sorted(gt_graphs.keys())
@@ -253,10 +258,24 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
             edge_baseline_metrics = None
             if edge_baseline:
                 edge_baseline_metrics = edge_by_label_baseline(p_edges, g_edges, p_nodes, g_nodes)
+            
+            # Compute composite diagnostics if requested
+            composite_metrics = None
+            if composite_diagnostics and pred_graph is not None:
+                # Reuse text computer from matching if available
+                text_computer = match_result.get("text_computer")
+                from frame2kg_eval.metrics.composite import composite_diagnostics as compute_composite
+                composite_metrics = compute_composite(
+                    p_nodes, g_nodes, match_result["mapping"],
+                    text_computer=text_computer,
+                    text_fields=tuple(cfg["text_fields"])
+                )
 
         all_node_metrics.append(node_metrics)
         all_edge_metrics.append(edge_metrics)
         all_box_stats.append(box_stats)
+        if composite_diagnostics:
+            all_composite_metrics.append(composite_metrics if composite_metrics else {})
 
         frame_result = {
             "video_id": video_id,
@@ -289,6 +308,15 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 "edge_baseline_recall": edge_baseline_metrics["recall"],
                 "edge_baseline_f1": edge_baseline_metrics["f1"],
             })
+        
+        if composite_diagnostics and composite_metrics:
+            frame_result.update({
+                "composite_hits_gt": composite_metrics.get("composite_hits_gt_side", 0),
+                "composite_hits_pred": composite_metrics.get("composite_hits_pred_side", 0),
+                "composite_fn_explained_pct": composite_metrics.get("composite_fn_explained_pct", 0.0),
+                "composite_fp_explained_pct": composite_metrics.get("composite_fp_explained_pct", 0.0),
+                "composite_adj_recall": composite_metrics.get("composite_adjusted_recall", 0.0),
+            })
 
         frame_results.append(frame_result)
 
@@ -313,6 +341,36 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     box_micro = aggregate_iou_micro(all_box_stats)
     box_macro = aggregate_iou_macro(all_box_stats)
     
+    # Aggregate composite diagnostics if enabled
+    composite_summary = None
+    if composite_diagnostics and all_composite_metrics:
+        total_gt_hits = sum(m.get("composite_hits_gt_side", 0) for m in all_composite_metrics if m)
+        total_pred_hits = sum(m.get("composite_hits_pred_side", 0) for m in all_composite_metrics if m)
+        
+        # Calculate overall explained percentages
+        total_fn = node_micro["fn"]
+        total_fp = node_micro["fp"]
+        
+        # Calculate means of per-frame statistics
+        avg_group_size_gt = np.mean([m.get("avg_group_size_gt", 0) for m in all_composite_metrics if m]) if all_composite_metrics else 0.0
+        avg_group_size_pred = np.mean([m.get("avg_group_size_pred", 0) for m in all_composite_metrics if m]) if all_composite_metrics else 0.0
+        mean_composite_score_gt = np.mean([m.get("mean_composite_score_gt", 0) for m in all_composite_metrics if m]) if all_composite_metrics else 0.0
+        mean_composite_score_pred = np.mean([m.get("mean_composite_score_pred", 0) for m in all_composite_metrics if m]) if all_composite_metrics else 0.0
+        
+        composite_summary = {
+            "total_composite_gt_hits": total_gt_hits,
+            "total_composite_pred_hits": total_pred_hits,
+            "fn_explained_pct": (total_gt_hits / total_fn * 100) if total_fn > 0 else 0.0,
+            "fp_explained_pct": (total_pred_hits / total_fp * 100) if total_fp > 0 else 0.0,
+            "composite_adjusted_recall": ((node_micro["tp"] + total_gt_hits) / 
+                                         (node_micro["tp"] + node_micro["fn"])) 
+                                         if (node_micro["tp"] + node_micro["fn"]) > 0 else 0.0,
+            "avg_group_size_gt": avg_group_size_gt,
+            "avg_group_size_pred": avg_group_size_pred,
+            "mean_composite_score_gt": mean_composite_score_gt,
+            "mean_composite_score_pred": mean_composite_score_pred
+        }
+    
     # Write output
     output_path = Path(out)
     if output_path.suffix == ".json":
@@ -330,6 +388,7 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 "box_micro": box_micro,
                 "box_macro": box_macro,
             },
+            "composite_diagnostics": composite_summary if composite_diagnostics else None,
             "frames": frame_results
         }
         
@@ -363,7 +422,9 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 
                 # Write summary footer
                 writer.writerow({})  # Empty row
-                writer.writerow({
+                
+                # Build micro summary row
+                micro_summary = {
                     "video_id": "SUMMARY",
                     "frame_no": "MICRO",
                     "node_precision": node_micro["precision"],
@@ -374,8 +435,10 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                     "edge_f1": edge_micro["f1"],
                     "box_mean_iou": box_micro["mean_iou"],
                     "box_median_iou": box_micro["median_iou"],
-                })
-                writer.writerow({
+                }
+                
+                # Build macro summary row
+                macro_summary = {
                     "video_id": "SUMMARY",
                     "frame_no": "MACRO",
                     "node_precision": node_macro["precision"],
@@ -386,7 +449,28 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                     "edge_f1": edge_macro["f1"],
                     "box_mean_iou": box_macro["mean_iou"],
                     "box_median_iou": box_macro["median_iou"],
-                })
+                }
+                
+                # Add composite diagnostics to summaries if enabled
+                if composite_diagnostics and composite_summary:
+                    micro_summary.update({
+                        "composite_hits_gt": composite_summary["total_composite_gt_hits"],
+                        "composite_hits_pred": composite_summary["total_composite_pred_hits"],
+                        "composite_fn_explained_pct": composite_summary["fn_explained_pct"],
+                        "composite_fp_explained_pct": composite_summary["fp_explained_pct"],
+                        "composite_adj_recall": composite_summary["composite_adjusted_recall"],
+                    })
+                    # Macro doesn't aggregate composites the same way
+                    macro_summary.update({
+                        "composite_hits_gt": "",
+                        "composite_hits_pred": "",
+                        "composite_fn_explained_pct": "",
+                        "composite_fp_explained_pct": "",
+                        "composite_adj_recall": "",
+                    })
+                
+                writer.writerow(micro_summary)
+                writer.writerow(macro_summary)
     
     # Print summary
     logger.success(f"Evaluation complete! Results written to {output_path}")
@@ -397,6 +481,16 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         "macro={macro:.3f} (unweighted mean of per-frame means)"
         .format(micro=box_micro["mean_iou"], macro=box_macro["mean_iou"])
     )
+    
+    if composite_diagnostics and composite_summary:
+        logger.info(
+            f"Composite diagnostics: {composite_summary['fn_explained_pct']:.1f}% of FN and "
+            f"{composite_summary['fp_explained_pct']:.1f}% of FP explained by composites"
+        )
+        logger.info(
+            f"Composite-adjusted recall (diagnostic): {composite_summary['composite_adjusted_recall']:.3f} "
+            f"(vs standard recall: {node_micro['recall']:.3f})"
+        )
     
     if timing_stats and timing_stats["n"] > 0:
         logger.info(f"Mean generation time: {timing_stats['mean']:.2f}s")
