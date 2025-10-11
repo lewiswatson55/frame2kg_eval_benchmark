@@ -11,7 +11,8 @@ text_floor: 0.25  # Minimum text similarity to consider
 model_name: sentence-transformers/all-MiniLM-L6-v2  # Embedding model for semantic mode
 
 # Edge matching settings
-predicate_mode: normalised  # Options: exact, normalised
+predicate_mode: normalised  # Options: exact, normalised, semantic - Uses embedding-based predicate similarity with Hungarian matching and threshold θ. Disabled by default due to higher cost and limited benefit on current dataset.
+predicate_semantic_threshold: 0.6  # Minimum similarity for semantic predicate matches - threshold θ
 
 # Dataset settings
 dataset_name: lewiswatson/Frame2KG-YC2

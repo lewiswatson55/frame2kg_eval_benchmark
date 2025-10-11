@@ -1,14 +1,26 @@
 """Edge-level precision, recall, and F1 metrics."""
 
-from typing import Dict, List
+from collections import defaultdict
+from typing import Dict, List, Optional, Set, Tuple
+
+import numpy as np
+from scipy.optimize import linear_sum_assignment
+
+from frame2kg_eval.matching.text import TextSimilarityComputer
 from frame2kg_eval.utils.normalise import normalise_predicate
+
+
+LARGE_COST = 1e6 # for edge predicate semantic match
 
 
 def edge_prf1(
     p_edges: List[Dict],
     g_edges: List[Dict],
     node_mapping: Dict[str, str],
-    predicate_mode: str = "exact"
+    predicate_mode: str = "exact",
+    *,
+    semantic_threshold: float = 0.6,
+    model_name: Optional[str] = None
 ) -> Dict:
     """Compute edge precision, recall, and F1.
     
@@ -18,7 +30,9 @@ def edge_prf1(
         p_edges: List of predicted edges
         g_edges: List of ground truth edges
         node_mapping: Mapping from predicted node IDs to GT node IDs
-        predicate_mode: How to match predicates ("exact" or "normalised")
+        predicate_mode: How to match predicates ("exact", "normalised", or "semantic")
+        semantic_threshold: Minimum similarity required for semantic predicate matches
+        model_name: Optional sentence transformer model name to override default
     
     Returns:
         Dictionary with metrics:
@@ -31,50 +45,120 @@ def edge_prf1(
             - support: Number of GT edges
     """
     # Build GT edge signatures for matching
-    gt_edge_sigs = set()
-    for g_edge in g_edges:
-        if predicate_mode == "exact":
-            pred = g_edge["predicate"]
-        elif predicate_mode == "normalised":
-            pred = normalise_predicate(g_edge["predicate"])
-        else:
-            raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
-        
-        sig = (g_edge["source"], g_edge["target"], pred)
-        gt_edge_sigs.add(sig)
-    
-    # Count matches
-    tp = 0
-    matched_pred_edges = []
-    
-    for i, p_edge in enumerate(p_edges):
-        # Check if both endpoints can be mapped
-        p_src = p_edge["source"]
-        p_tgt = p_edge["target"]
-        
-        if p_src not in node_mapping or p_tgt not in node_mapping:
-            continue
-        
-        # Map to GT node IDs
-        mapped_src = node_mapping[p_src]
-        mapped_tgt = node_mapping[p_tgt]
-        
-        if predicate_mode == "exact":
-            pred = p_edge["predicate"]
-        elif predicate_mode == "normalised":
-            pred = normalise_predicate(p_edge["predicate"])
-        else:
-            raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
-        
-        # Check if this edge exists in GT
-        sig = (mapped_src, mapped_tgt, pred)
-        if sig in gt_edge_sigs:
-            tp += 1
-            matched_pred_edges.append(i)
-    
-    # Count false positives and false negatives
-    fp = len(p_edges) - tp
-    fn = len(g_edges) - tp
+    if predicate_mode not in {"exact", "normalised", "semantic"}:
+        raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
+
+    matched_pred_edges: Set[int]
+    matched_gt_edges: Set[int]
+
+    if predicate_mode in {"exact", "normalised"}:
+        gt_edge_sigs = set()
+        for g_edge in g_edges:
+            if predicate_mode == "exact":
+                pred_value = g_edge["predicate"]
+            else:
+                pred_value = normalise_predicate(g_edge["predicate"])
+
+            sig = (g_edge["source"], g_edge["target"], pred_value)
+            gt_edge_sigs.add(sig)
+
+        matched_pred_edges = set()
+        matched_gt_edges = set()
+
+        for i, p_edge in enumerate(p_edges):
+            p_src = p_edge["source"]
+            p_tgt = p_edge["target"]
+
+            if p_src not in node_mapping or p_tgt not in node_mapping:
+                continue
+
+            mapped_src = node_mapping[p_src]
+            mapped_tgt = node_mapping[p_tgt]
+
+            if predicate_mode == "exact":
+                pred_value = p_edge["predicate"]
+            else:
+                pred_value = normalise_predicate(p_edge["predicate"])
+
+            sig = (mapped_src, mapped_tgt, pred_value)
+            if sig in gt_edge_sigs:
+                matched_pred_edges.add(i)
+        tp = len(matched_pred_edges)
+        fp = len(p_edges) - tp
+        fn = len(g_edges) - tp
+    else:  # semantic predicate matching
+        text_computer = TextSimilarityComputer(mode="semantic", model_name=model_name)
+
+        pred_groups: Dict[Tuple[str, str], List[Tuple[int, str]]] = defaultdict(list)
+        for i, p_edge in enumerate(p_edges):
+            p_src = p_edge["source"]
+            p_tgt = p_edge["target"]
+
+            if p_src not in node_mapping or p_tgt not in node_mapping:
+                continue
+
+            mapped_src = node_mapping[p_src]
+            mapped_tgt = node_mapping[p_tgt]
+            pred_groups[(mapped_src, mapped_tgt)].append((i, p_edge["predicate"]))
+
+        gt_groups: Dict[Tuple[str, str], List[Tuple[int, str]]] = defaultdict(list)
+        for j, g_edge in enumerate(g_edges):
+            gt_groups[(g_edge["source"], g_edge["target"])].append((j, g_edge["predicate"]))
+
+        matched_pred_edges = set()
+        matched_gt_edges = set()
+
+        for key, preds in pred_groups.items():
+            gt_candidates = gt_groups.get(key)
+            if not gt_candidates:
+                continue
+
+            pred_texts = [pred for _, pred in preds]
+            gt_texts = [pred for _, pred in gt_candidates]
+
+            if not pred_texts or not gt_texts:
+                continue
+
+            # Compute predicate similarities once the endpoints align.
+            similarity = text_computer.compute_semantic_similarity(pred_texts, gt_texts)
+            if similarity.size == 0:
+                continue
+
+            similarity = np.clip(similarity, -1.0, 1.0).astype(np.float32, copy=False)
+            valid_mask = similarity >= semantic_threshold
+
+            valid_rows = np.where(valid_mask.any(axis=1))[0]
+            valid_cols = np.where(valid_mask.any(axis=0))[0]
+
+            if valid_rows.size == 0 or valid_cols.size == 0:
+                continue
+
+            sub_similarity = similarity[np.ix_(valid_rows, valid_cols)]
+            sub_valid_mask = valid_mask[np.ix_(valid_rows, valid_cols)]
+
+            if sub_similarity.size == 0:
+                continue
+
+            cost_matrix = 1.0 - sub_similarity
+            # Stop Hungarian from selecting below-threshold pairs altogether.
+            cost_matrix[~sub_valid_mask] = LARGE_COST
+
+            row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+            for r_idx, c_idx in zip(row_ind, col_ind):
+                # Guard against solver assignments that only satisfy the large-cost fallback.
+                if cost_matrix[r_idx, c_idx] >= LARGE_COST:
+                    continue
+
+                # Map the reduced indices back to the original edge positions.
+                pred_edge_idx = preds[valid_rows[r_idx]][0]
+                gt_edge_idx = gt_candidates[valid_cols[c_idx]][0]
+                matched_pred_edges.add(pred_edge_idx)
+                matched_gt_edges.add(gt_edge_idx)
+
+        tp = len(matched_pred_edges)
+        fp = len(p_edges) - tp
+        fn = len(g_edges) - len(matched_gt_edges)
     
     # Compute metrics
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
@@ -163,7 +247,10 @@ def edge_prf1_by_predicate(
     p_edges: List[Dict],
     g_edges: List[Dict],
     node_mapping: Dict[str, str],
-    predicate_mode: str = "exact"
+    predicate_mode: str = "exact",
+    *,
+    semantic_threshold: float = 0.6,
+    model_name: Optional[str] = None
 ) -> Dict[str, Dict]:
     """Compute per-predicate edge metrics.
     
@@ -172,6 +259,8 @@ def edge_prf1_by_predicate(
         g_edges: Ground truth edges
         node_mapping: Node ID mapping
         predicate_mode: Predicate matching mode
+        semantic_threshold: Minimum similarity required for semantic predicate matches
+        model_name: Optional sentence transformer model name
     
     Returns:
         Dictionary mapping predicates to their metrics
@@ -201,7 +290,14 @@ def edge_prf1_by_predicate(
         gt_edges = gt_by_predicate.get(predicate, [])
         
         # Compute metrics for this predicate
-        metrics = edge_prf1(pred_edges, gt_edges, node_mapping, predicate_mode)
+        metrics = edge_prf1(
+            pred_edges,
+            gt_edges,
+            node_mapping,
+            predicate_mode,
+            semantic_threshold=semantic_threshold,
+            model_name=model_name,
+        )
         per_predicate_metrics[predicate] = metrics
     
     return per_predicate_metrics

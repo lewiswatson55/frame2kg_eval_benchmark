@@ -1,10 +1,14 @@
 """Two-stage node matching with Hungarian assignment."""
 
+from collections import defaultdict
 import numpy as np
 from typing import Dict, List, Optional, Set, Tuple
 from scipy.optimize import linear_sum_assignment
 from frame2kg_eval.matching.iou import compute_iou_matrix
 from frame2kg_eval.matching.text import TextSimilarityComputer
+
+
+LARGE_COST = 1e6 # for edge predicate semantic match
 
 
 def two_stage_node_match(
@@ -125,7 +129,10 @@ def compute_edge_mapping(
     p_edges: List[Dict],
     g_edges: List[Dict],
     node_mapping: Dict[str, str],
-    predicate_mode: str = "exact"
+    predicate_mode: str = "exact",
+    *,
+    semantic_threshold: float = 0.6,
+    model_name: Optional[str] = None
 ) -> Dict[int, int]:
     """Map edges based on node mapping and predicate matching.
     
@@ -138,46 +145,107 @@ def compute_edge_mapping(
     Returns:
         Dict mapping predicted edge indices to GT edge indices
     """
-    edge_mapping = {}
-    
-    # Build GT edge signatures for fast lookup
-    gt_edge_sigs = {}
-    for j, g_edge in enumerate(g_edges):
-        if predicate_mode == "exact":
-            pred_key = g_edge["predicate"]
-        elif predicate_mode == "normalised":
-            # Normalise for lexical matching
-            from frame2kg_eval.utils.normalise import normalise_predicate
-            pred_key = normalise_predicate(g_edge["predicate"])
-        else:
-            raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
-        
-        sig = (g_edge["source"], g_edge["target"], pred_key)
-        gt_edge_sigs[sig] = j
-    
-    # Try to match each predicted edge
-    for i, p_edge in enumerate(p_edges):
-        # Map endpoints through node mapping
-        p_src = p_edge["source"]
-        p_tgt = p_edge["target"]
-        
-        if p_src not in node_mapping or p_tgt not in node_mapping:
-            continue
-        
-        mapped_src = node_mapping[p_src]
-        mapped_tgt = node_mapping[p_tgt]
-        
-        if predicate_mode == "exact":
-            pred_key = p_edge["predicate"]
-        elif predicate_mode == "normalised":
-            from frame2kg_eval.utils.normalise import normalise_predicate
-            pred_key = normalise_predicate(p_edge["predicate"])
-        else:
-            raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
-        
-        # Look for matching GT edge
-        sig = (mapped_src, mapped_tgt, pred_key)
-        if sig in gt_edge_sigs:
-            edge_mapping[i] = gt_edge_sigs[sig]
-    
+    edge_mapping: Dict[int, int] = {}
+
+    if predicate_mode in {"exact", "normalised"}:
+        # Build GT edge signatures for fast lookup
+        gt_edge_sigs: Dict[Tuple[str, str, str], int] = {}
+        for j, g_edge in enumerate(g_edges):
+            if predicate_mode == "exact":
+                pred_key = g_edge["predicate"]
+            else:  # normalised
+                from frame2kg_eval.utils.normalise import normalise_predicate
+                pred_key = normalise_predicate(g_edge["predicate"])
+
+            sig = (g_edge["source"], g_edge["target"], pred_key)
+            gt_edge_sigs[sig] = j
+
+        # Try to match each predicted edge
+        for i, p_edge in enumerate(p_edges):
+            p_src = p_edge["source"]
+            p_tgt = p_edge["target"]
+
+            if p_src not in node_mapping or p_tgt not in node_mapping:
+                continue
+
+            mapped_src = node_mapping[p_src]
+            mapped_tgt = node_mapping[p_tgt]
+
+            if predicate_mode == "exact":
+                pred_key = p_edge["predicate"]
+            else:
+                from frame2kg_eval.utils.normalise import normalise_predicate
+                pred_key = normalise_predicate(p_edge["predicate"])
+
+            sig = (mapped_src, mapped_tgt, pred_key)
+            if sig in gt_edge_sigs:
+                edge_mapping[i] = gt_edge_sigs[sig]
+    elif predicate_mode == "semantic":
+        text_computer = TextSimilarityComputer(mode="semantic", model_name=model_name)
+
+        pred_groups: Dict[Tuple[str, str], List[Tuple[int, str]]] = defaultdict(list)
+        for i, p_edge in enumerate(p_edges):
+            p_src = p_edge["source"]
+            p_tgt = p_edge["target"]
+
+            if p_src not in node_mapping or p_tgt not in node_mapping:
+                continue
+
+            mapped_src = node_mapping[p_src]
+            mapped_tgt = node_mapping[p_tgt]
+            pred_groups[(mapped_src, mapped_tgt)].append((i, p_edge["predicate"]))
+
+        gt_groups: Dict[Tuple[str, str], List[Tuple[int, str]]] = defaultdict(list)
+        for j, g_edge in enumerate(g_edges):
+            gt_groups[(g_edge["source"], g_edge["target"])].append((j, g_edge["predicate"]))
+
+        for key, preds in pred_groups.items():
+            gt_candidates = gt_groups.get(key)
+            if not gt_candidates:
+                continue
+
+            pred_texts = [pred for _, pred in preds]
+            gt_texts = [pred for _, pred in gt_candidates]
+
+            if not pred_texts or not gt_texts:
+                continue
+
+            # Compute predicate similarities for this mapped node pair.
+            similarity = text_computer.compute_semantic_similarity(pred_texts, gt_texts)
+            if similarity.size == 0:
+                continue
+
+            similarity = np.clip(similarity, -1.0, 1.0).astype(np.float32, copy=False)
+            valid_mask = similarity >= semantic_threshold
+
+            valid_rows = np.where(valid_mask.any(axis=1))[0]
+            valid_cols = np.where(valid_mask.any(axis=0))[0]
+
+            if valid_rows.size == 0 or valid_cols.size == 0:
+                continue
+
+            sub_similarity = similarity[np.ix_(valid_rows, valid_cols)]
+            sub_valid_mask = valid_mask[np.ix_(valid_rows, valid_cols)]
+
+            if sub_similarity.size == 0:
+                continue
+
+            cost_matrix = 1.0 - sub_similarity
+            # Mask sub-threshold pairs so Hungarian never allocates them.
+            cost_matrix[~sub_valid_mask] = LARGE_COST
+
+            row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+            for r_idx, c_idx in zip(row_ind, col_ind):
+                # Skip assignments that fell back to the synthetic high cost (no viable match).
+                if cost_matrix[r_idx, c_idx] >= LARGE_COST:
+                    continue
+
+                # Translate the reduced matrix coordinates back to original edge indexes.
+                pred_edge_idx = preds[valid_rows[r_idx]][0]
+                gt_edge_idx = gt_candidates[valid_cols[c_idx]][0]
+                edge_mapping[pred_edge_idx] = gt_edge_idx
+    else:
+        raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
+
     return edge_mapping

@@ -183,10 +183,11 @@ text_mode: semantic
 text_fields: [id, label]  # Extend with attributes, or other node datapoints, etc. as needed
 text_floor: 0.25
 model_name: sentence-transformers/all-MiniLM-L6-v2
-predicate_mode: normalised  # Use exact for strict string equality
+predicate_mode: normalised  # Use exact for strict string equality, normalised for with normalisation, or semantic for embeddings (experimental - not used for frame2kg dataset eval)
+predicate_semantic_threshold: 0.6
 ```
 
-The matcher handles any number of `text_fields`; nested containers (lists, dicts) are flattened so attribute dictionaries can be included directly.
+The matcher handles any number of `text_fields`; nested containers (lists, dicts) are flattened so attribute dictionaries can be included directly. Switching `predicate_mode` to `semantic` engages sentence-level predicate matching with the same embedding model and threshold defined above.
 
 Use with: `--config config.yaml`
 

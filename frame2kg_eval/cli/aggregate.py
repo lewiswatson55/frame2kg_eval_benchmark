@@ -141,6 +141,8 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
                 g_edges,
                 node_id_mapping,
                 config.get("predicate_mode", "exact"),
+                semantic_threshold=config.get("predicate_semantic_threshold", 0.6),
+                model_name=config.get("model_name"),
             )
 
         node_metrics_list.append(node_metrics)

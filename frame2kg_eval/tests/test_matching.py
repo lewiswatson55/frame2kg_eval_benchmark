@@ -301,7 +301,92 @@ class TestEdgeMapping:
         edge_mapping = compute_edge_mapping(p_edges, g_edges, node_mapping, "normalised")
         
         assert len(edge_mapping) == 2  # Both should match after normalisation
-    
+
+    def test_edge_mapping_semantic_predicates(self, monkeypatch):
+        """Test semantic predicate matching using mocked similarities."""
+        p_edges = [
+            {"source": "p1", "target": "p2", "predicate": "next to"},
+            {"source": "p2", "target": "p3", "predicate": "holding"}
+        ]
+        g_edges = [
+            {"source": "g1", "target": "g2", "predicate": "beside"},
+            {"source": "g2", "target": "g3", "predicate": "grasping"}
+        ]
+
+        node_mapping = {"p1": "g1", "p2": "g2", "p3": "g3"}
+
+        score_lookup = {
+            ("next to", "beside"): 0.92,
+            ("next to", "grasping"): 0.15,
+            ("holding", "beside"): 0.20,
+            ("holding", "grasping"): 0.88,
+        }
+
+        def fake_semantic_similarity(self, texts1, texts2):
+            matrix = np.zeros((len(texts1), len(texts2)), dtype=np.float32)
+            for row, text1 in enumerate(texts1):
+                for col, text2 in enumerate(texts2):
+                    matrix[row, col] = score_lookup.get((text1, text2), 0.0)
+            return matrix
+
+        monkeypatch.setattr(
+            TextSimilarityComputer,
+            "compute_semantic_similarity",
+            fake_semantic_similarity,
+        )
+
+        edge_mapping = compute_edge_mapping(
+            p_edges,
+            g_edges,
+            node_mapping,
+            "semantic",
+            semantic_threshold=0.8,
+        )
+
+        assert len(edge_mapping) == 2
+        assert edge_mapping[0] == 0
+        assert edge_mapping[1] == 1
+
+    def test_edge_mapping_semantic_threshold_masking(self, monkeypatch):
+        """Ensure low-similarity pairs are excluded before assignment."""
+        p_edges = [
+            {"source": "p1", "target": "p2", "predicate": "near"},
+            {"source": "p1", "target": "p2", "predicate": "holding"},
+        ]
+        g_edges = [
+            {"source": "g1", "target": "g2", "predicate": "near"},
+            {"source": "g1", "target": "g2", "predicate": "holding"},
+        ]
+
+        node_mapping = {"p1": "g1", "p2": "g2"}
+
+        similarity_matrix = np.array(
+            [
+                [0.84, 0.79],
+                [0.78, 0.60],
+            ],
+            dtype=np.float32,
+        )
+
+        def fake_semantic_similarity(self, texts1, texts2):
+            return similarity_matrix
+
+        monkeypatch.setattr(
+            TextSimilarityComputer,
+            "compute_semantic_similarity",
+            fake_semantic_similarity,
+        )
+
+        edge_mapping = compute_edge_mapping(
+            p_edges,
+            g_edges,
+            node_mapping,
+            "semantic",
+            semantic_threshold=0.8,
+        )
+
+        assert edge_mapping == {0: 0}
+
     def test_edge_mapping_empty(self):
         """Test edge mapping with empty inputs."""
         node_mapping = {"p1": "g1"}

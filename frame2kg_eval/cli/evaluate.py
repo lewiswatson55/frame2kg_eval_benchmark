@@ -76,9 +76,10 @@ def load_config(config_path: Optional[Path] = None) -> Dict:
             "text_fields": ["id", "label"],
             "text_floor": 0.25,
             "model_name": "sentence-transformers/all-MiniLM-L6-v2",
-            "predicate_mode": "normalised"
+            "predicate_mode": "normalised",
+            "predicate_semantic_threshold": 0.6,
         }
-    
+
     return config
 
 
@@ -240,7 +241,14 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 g_id = g_nodes[g_idx]["id"]
                 node_id_mapping[p_id] = g_id
 
-            edge_metrics = edge_prf1(p_edges, g_edges, node_id_mapping, cfg.get("predicate_mode", "exact"))
+            edge_metrics = edge_prf1(
+                p_edges,
+                g_edges,
+                node_id_mapping,
+                cfg.get("predicate_mode", "exact"),
+                semantic_threshold=cfg.get("predicate_semantic_threshold", 0.6),
+                model_name=cfg.get("model_name"),
+            )
 
             edge_baseline_metrics = None
             if edge_baseline:
