@@ -8,6 +8,9 @@ from frame2kg_eval.matching.iou import compute_iou_matrix
 from frame2kg_eval.matching.text import TextSimilarityComputer
 
 
+LARGE_COST = 1e6 # for edge predicate semantic match
+
+
 def two_stage_node_match(
     p_nodes: List[Dict],
     g_nodes: List[Dict],
@@ -207,26 +210,37 @@ def compute_edge_mapping(
             if not pred_texts or not gt_texts:
                 continue
 
+            # Compute predicate similarities for this mapped node pair.
             similarity = text_computer.compute_semantic_similarity(pred_texts, gt_texts)
             if similarity.size == 0:
                 continue
 
-            similarity = np.asarray(similarity, dtype=np.float32)
+            similarity = np.clip(similarity, -1.0, 1.0).astype(np.float32, copy=False)
             valid_mask = similarity >= semantic_threshold
 
-            if not np.any(valid_mask):
+            valid_rows = np.where(valid_mask.any(axis=1))[0]
+            valid_cols = np.where(valid_mask.any(axis=0))[0]
+
+            if valid_rows.size == 0 or valid_cols.size == 0:
                 continue
 
-            cost_matrix = 1.0 - similarity
-            cost_matrix[~valid_mask] = 2.0  # Larger than any valid cost (since similarity <= 1.0)
+            sub_similarity = similarity[np.ix_(valid_rows, valid_cols)]
+            sub_valid_mask = valid_mask[np.ix_(valid_rows, valid_cols)]
+
+            if sub_similarity.size == 0:
+                continue
+
+            cost_matrix = 1.0 - sub_similarity
+            # Mask sub-threshold pairs so Hungarian never allocates them.
+            cost_matrix[~sub_valid_mask] = LARGE_COST
+
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
             for r_idx, c_idx in zip(row_ind, col_ind):
-                score = float(similarity[r_idx, c_idx])
-                if score >= semantic_threshold:
-                    pred_edge_idx = preds[r_idx][0]
-                    gt_edge_idx = gt_candidates[c_idx][0]
-                    edge_mapping[pred_edge_idx] = gt_edge_idx
+                # Translate the reduced matrix coordinates back to original edge indexes.
+                pred_edge_idx = preds[valid_rows[r_idx]][0]
+                gt_edge_idx = gt_candidates[valid_cols[c_idx]][0]
+                edge_mapping[pred_edge_idx] = gt_edge_idx
     else:
         raise ValueError(f"Unsupported predicate_mode: {predicate_mode}")
 
