@@ -213,6 +213,8 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 pbar.update(1)
             continue
 
+        composite_metrics = None
+
         if pred_graph is None:
             p_nodes = []
             p_edges = []
@@ -260,7 +262,6 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 edge_baseline_metrics = edge_by_label_baseline(p_edges, g_edges, p_nodes, g_nodes)
             
             # Compute composite diagnostics if requested
-            composite_metrics = None
             if composite_diagnostics and pred_graph is not None:
                 # Reuse text computer from matching if available
                 text_computer = match_result.get("text_computer")
@@ -400,7 +401,26 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         with open(output_path, 'w', newline='') as f:
             if frame_results:
                 fieldnames = list(frame_results[0].keys())
-                if timing_stats and timing_stats["n"] > 0:
+
+                # Ensure later frame keys (e.g., composite diagnostics) make it into the header
+                for result in frame_results[1:]:
+                    for key in result.keys():
+                        if key not in fieldnames:
+                            fieldnames.append(key)
+
+                if composite_diagnostics:
+                    composite_fields = [
+                        "composite_hits_gt",
+                        "composite_hits_pred",
+                        "composite_fn_explained_pct",
+                        "composite_fp_explained_pct",
+                        "composite_adj_recall",
+                    ]
+                    for key in composite_fields:
+                        if key not in fieldnames:
+                            fieldnames.append(key)
+
+                if timing_stats and timing_stats["n"] > 0 and "gen_wall_time_s" not in fieldnames:
                     fieldnames.append("gen_wall_time_s")
                 
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
