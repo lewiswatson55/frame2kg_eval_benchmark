@@ -17,7 +17,12 @@ from frame2kg_eval.metrics.edges import edge_prf1, edge_by_label_baseline
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
 from frame2kg_eval.metrics.conformity import compute_conformity_from_directory, check_file_conformity
 from frame2kg_eval.metrics.timing import manifest_timing
-from frame2kg_eval.metrics.boxes import (box_iou_stats,aggregate_iou_micro,aggregate_iou_macro)
+from frame2kg_eval.metrics.boxes import (
+    box_iou_stats,
+    aggregate_iou_micro,
+    aggregate_iou_macro,
+    IOU_COVERAGE_THRESHOLDS,
+)
 from frame2kg_eval.metrics.composite import composite_diagnostics
 from frame2kg_eval.utils.logging import logger
 from frame2kg_eval.utils.seeding import seed_matching, MATCHING_SEED
@@ -48,7 +53,7 @@ def _empty_prf(support: int, fp_penalty: int = 0) -> Dict[str, float]:
 def _empty_box_stats() -> Dict[str, float]:
     """Return a zeroed-out box IoU stats record."""
 
-    return {
+    stats = {
         "mean_iou": 0.0,
         "median_iou": 0.0,
         "std_iou": 0.0,
@@ -57,6 +62,9 @@ def _empty_box_stats() -> Dict[str, float]:
         "count": 0,
         "match_ious": (),
     }
+    for _, key in IOU_COVERAGE_THRESHOLDS:
+        stats[key] = 0.0
+    return stats
 
 
 def load_config(config_path: Optional[Path] = None) -> Dict:
@@ -302,6 +310,8 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
             "box_max_iou": box_stats["max_iou"],
             "box_match_count": box_stats["count"],
         }
+        for _, key in IOU_COVERAGE_THRESHOLDS:
+            frame_result[key] = box_stats.get(key, 0.0)
 
         if edge_baseline and edge_baseline_metrics:
             frame_result.update({
@@ -462,6 +472,8 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                     "box_mean_iou": box_micro["mean_iou"],
                     "box_median_iou": box_micro["median_iou"],
                 }
+                for _, key in IOU_COVERAGE_THRESHOLDS:
+                    micro_summary[key] = box_micro.get(key, 0.0)
                 
                 # Build macro summary row
                 macro_summary = {
@@ -476,6 +488,8 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                     "box_mean_iou": box_macro["mean_iou"],
                     "box_median_iou": box_macro["median_iou"],
                 }
+                for _, key in IOU_COVERAGE_THRESHOLDS:
+                    macro_summary[key] = box_macro.get(key, 0.0)
                 
                 # Add composite diagnostics to summaries if enabled
                 if composite_diagnostics and composite_summary:
@@ -507,6 +521,11 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         "macro={macro:.3f} (unweighted mean of per-frame means)"
         .format(micro=box_micro["mean_iou"], macro=box_macro["mean_iou"])
     )
+    for threshold, key in IOU_COVERAGE_THRESHOLDS:
+        logger.info(
+            f"IoU@{threshold:.2f} coverage: micro={box_micro.get(key, 0.0) * 100:.1f}% "
+            f"(>= {threshold:.2f}), macro={box_macro.get(key, 0.0) * 100:.1f}%"
+        )
     
     if composite_diagnostics and composite_summary:
         logger.info(
