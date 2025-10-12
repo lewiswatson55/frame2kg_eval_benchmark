@@ -34,6 +34,8 @@ def test_box_iou_stats_with_matrix():
     assert abs(stats["max_iou"] - 1.0) < 1e-6
     assert stats["std_iou"] >= 0.0
     assert stats["match_ious"] == (1.0, 0.25)
+    assert abs(stats["box_iou@0.5_coverage"] - 0.5) < 1e-6
+    assert abs(stats["box_iou@0.75_coverage"] - 0.5) < 1e-6
 
 
 def test_box_iou_stats_no_matches():
@@ -50,6 +52,8 @@ def test_box_iou_stats_no_matches():
         "max_iou": 0.0,
         "count": 0,
         "match_ious": (),
+        "box_iou@0.5_coverage": 0.0,
+        "box_iou@0.75_coverage": 0.0,
     }
 
 
@@ -73,6 +77,8 @@ def test_box_iou_stats_fallback_compute():
     assert stats["max_iou"] == 1.0
     assert stats["min_iou"] < 0.2
     assert len(stats["match_ious"]) == 2
+    assert stats["box_iou@0.5_coverage"] > 0.0
+    assert stats["box_iou@0.75_coverage"] > 0.0
 
 
 def test_aggregate_iou_micro_macro():
@@ -86,8 +92,12 @@ def test_aggregate_iou_micro_macro():
     assert micro["count"] == 10
     assert abs(micro["mean_iou"] - 0.6) < 1e-6  # (0.8*5 + 0.4*5)/10
     assert abs(micro["median_iou"] - 0.6) < 1e-6  # Median of combined values
+    assert abs(micro["box_iou@0.5_coverage"] - 0.5) < 1e-6
+    assert abs(micro["box_iou@0.75_coverage"] - 0.5) < 1e-6
 
     macro = aggregate_iou_macro(frames)
     assert macro["frame_count"] == 2
     assert abs(macro["mean_iou"] - 0.6) < 1e-6  # (0.8 + 0.4)/2
     assert abs(macro["median_iou"] - 0.6) < 1e-6
+    assert abs(macro["box_iou@0.5_coverage"] - 0.5) < 1e-6
+    assert abs(macro["box_iou@0.75_coverage"] - 0.5) < 1e-6

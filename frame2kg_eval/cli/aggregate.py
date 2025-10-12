@@ -16,7 +16,11 @@ from frame2kg_eval.metrics.edges import edge_prf1
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
 from frame2kg_eval.metrics.conformity import compute_conformity_from_directory
 from frame2kg_eval.metrics.timing import manifest_timing
-from frame2kg_eval.metrics.boxes import box_iou_stats, aggregate_iou_micro
+from frame2kg_eval.metrics.boxes import (
+    box_iou_stats,
+    aggregate_iou_micro,
+    IOU_COVERAGE_THRESHOLDS,
+)
 from frame2kg_eval.utils.logging import logger
 from frame2kg_eval.utils.seeding import seed_matching, MATCHING_SEED
 
@@ -46,7 +50,7 @@ def _empty_prf(support: int, fp_penalty: int = 0) -> Dict[str, float]:
 def _empty_box_stats() -> Dict[str, float]:
     """Return zeroed matched-pair IoU stats."""
 
-    return {
+    stats = {
         "mean_iou": 0.0,
         "median_iou": 0.0,
         "std_iou": 0.0,
@@ -55,6 +59,9 @@ def _empty_box_stats() -> Dict[str, float]:
         "count": 0,
         "match_ious": (),
     }
+    for _, key in IOU_COVERAGE_THRESHOLDS:
+        stats[key] = 0.0
+    return stats
 
 
 def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], config: Dict) -> Dict:
@@ -176,6 +183,7 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
         "edge_recall": edge_micro["recall"],
         "box_mean_iou": box_micro["mean_iou"],
         "box_median_iou": box_micro["median_iou"],
+        **{key: box_micro.get(key, 0.0) for _, key in IOU_COVERAGE_THRESHOLDS},
         "mean_gen_time": timing_stats["mean"] if timing_stats else None,
         "num_frames": len(node_metrics_list),
     }
@@ -285,6 +293,7 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
                 "node_f1", "node_precision", "node_recall",
                 "edge_f1", "edge_precision", "edge_recall",
                 "box_mean_iou", "box_median_iou",
+                *[key for _, key in IOU_COVERAGE_THRESHOLDS],
                 "mean_gen_time", "num_frames"
             ]
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -301,14 +310,23 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
         avg_validity = sum(r["validity_rate"] for r in results) / len(results)
         avg_box_iou = sum(r.get("box_mean_iou", 0.0) for r in results) / len(results)
         avg_box_median = sum(r.get("box_median_iou", 0.0) for r in results) / len(results)
-        
+        avg_coverages = {
+            key: sum(r.get(key, 0.0) for r in results) / len(results)
+            for _, key in IOU_COVERAGE_THRESHOLDS
+        }
+
         logger.info(f"\nOverall statistics across {len(results)} runs:")
         logger.info(f"  Average Node F1: {avg_node_f1:.3f}")
         logger.info(f"  Average Edge F1: {avg_edge_f1:.3f}")
         logger.info(f"  Average Validity: {avg_validity:.1f}%")
         logger.info(f"  Matched-pair IoU (box IoU) micro mean: {avg_box_iou:.3f}")
         logger.info(f"  Matched-pair IoU (box IoU) micro median: {avg_box_median:.3f}")
-        
+        for threshold, key in IOU_COVERAGE_THRESHOLDS:
+            label = f"IoU@{threshold:.2f} coverage"
+            logger.info(
+                f"  {label}: {avg_coverages[key] * 100:.1f}%"
+            )
+
         # Best run
         best = results[0]
         logger.info(f"\nBest run: {best['variant']}/{best['index']}")
@@ -321,6 +339,11 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
         logger.info(
             f"  Matched-pair IoU (box IoU) micro median: {best.get('box_median_iou', 0.0):.3f}"
         )
+        for threshold, key in IOU_COVERAGE_THRESHOLDS:
+            label = f"IoU@{threshold:.2f} coverage"
+            logger.info(
+                f"  {label}: {best.get(key, 0.0) * 100:.1f}%"
+            )
 
 
 if __name__ == "__main__":

@@ -139,7 +139,7 @@ Normalised comparison lowercases and strips punctuation so common formatting var
 - **Edge metrics**: Similar to nodes, with optional edge-by-label baseline
 - **Validity**: JSON parsing success rate
 - **Schema Conformity**: Validates structure against expected graph schema
-- **Matched-pair IoU (box IoU)**: Mean/median IoU across matched node pairs (reported per-frame as `box_mean_iou` / `box_median_iou`). Micro = mean IoU across all matched pairs (weighted by match count); Macro = unweighted mean of per-frame mean IoU.
+- **Matched-pair IoU (box IoU)**: Mean/median IoU across matched node pairs (reported per-frame as `box_mean_iou` / `box_median_iou`). Micro = mean IoU across all matched pairs (weighted by match count); Macro = unweighted mean of per-frame mean IoU. We also report intuitive coverage rates, `box_iou@0.5_coverage` / `box_iou@0.75_coverage`, showing the share of matched boxes that clear the 0.5 / 0.75 IoU thresholds.
 - **Timing**: Mean generation time from manifest.csv
 - **Composite Diagnostics** (optional): Explains what % of FN/FP are due to compositional mismatches. Reports `composite_hits_gt` (many preds→one GT) and `composite_hits_pred` (many GTs→one pred). Does not affect primary F1 scores.
 
