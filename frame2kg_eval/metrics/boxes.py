@@ -8,6 +8,7 @@ Per-frame outputs include:
 - std_iou: Standard deviation of IoU values (0.0 if none)
 - min_iou, max_iou: Extremes (0.0 if none)
 - count: Number of matched pairs
+- box_iou@0.5_coverage / box_iou@0.75_coverage: Fraction of matches with IoU ≥ threshold
 
 NB: Mean could in theory be too brittle; since IoU values are clamped
 to [0,1] we still obtain relatively stable values even with outliers.
@@ -18,9 +19,15 @@ precision/recall-style metrics elsewhere.
 
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 import warnings
+
+
+IOU_COVERAGE_THRESHOLDS: Tuple[Tuple[float, str], ...] = (
+    (0.5, "box_iou@0.5_coverage"),
+    (0.75, "box_iou@0.75_coverage"),
+)
 
 
 def _warn_if_invalid_box(box, node_ctx: str) -> None:
@@ -59,7 +66,8 @@ def box_iou_stats(
         iou_matrix: Optional precomputed IoU matrix from matching stage
 
     Returns:
-        Dict with keys: mean_iou, median_iou, std_iou, min_iou, max_iou, count, match_ious
+        Dict with keys: mean_iou, median_iou, std_iou, min_iou, max_iou, count,
+        box_iou@0.5_coverage, box_iou@0.75_coverage, match_ious
     """
     ious: List[float] = []
 
@@ -86,7 +94,7 @@ def box_iou_stats(
                 ious.append(iou)
 
     if not ious:
-        return {
+        empty_stats = {
             "mean_iou": 0.0,
             "median_iou": 0.0,
             "std_iou": 0.0,
@@ -95,9 +103,12 @@ def box_iou_stats(
             "count": 0,
             "match_ious": (),
         }
+        for _, key in IOU_COVERAGE_THRESHOLDS:
+            empty_stats[key] = 0.0
+        return empty_stats
 
     arr = np.asarray(ious, dtype=np.float32)
-    return {
+    stats = {
         "mean_iou": float(arr.mean()),
         "median_iou": float(np.median(arr)),
         "std_iou": float(arr.std(ddof=0)),
@@ -106,6 +117,9 @@ def box_iou_stats(
         "count": int(arr.size),
         "match_ious": tuple(float(v) for v in arr),
     }
+    for threshold, key in IOU_COVERAGE_THRESHOLDS:
+        stats[key] = float(np.mean(arr >= threshold))
+    return stats
 
 
 def aggregate_iou_micro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
@@ -131,7 +145,15 @@ def aggregate_iou_micro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
                 all_ious.extend(float(v) for v in match_ious)
     mean = (weighted_sum / total_count) if total_count > 0 else 0.0
     median = float(np.median(np.asarray(all_ious, dtype=np.float32))) if all_ious else 0.0
-    return {"mean_iou": mean, "median_iou": median, "count": total_count}
+    result = {"mean_iou": mean, "median_iou": median, "count": total_count}
+    if all_ious:
+        arr = np.asarray(all_ious, dtype=np.float32)
+        for threshold, key in IOU_COVERAGE_THRESHOLDS:
+            result[key] = float(np.mean(arr >= threshold))
+    else:
+        for _, key in IOU_COVERAGE_THRESHOLDS:
+            result[key] = 0.0
+    return result
 
 
 def aggregate_iou_macro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
@@ -145,12 +167,28 @@ def aggregate_iou_macro(stats_list: List[Dict[str, float]]) -> Dict[str, float]:
     """
     filtered = [s for s in stats_list if int(s.get("count", 0)) > 0]
     if not filtered:
-        return {"mean_iou": 0.0, "median_iou": 0.0, "frame_count": 0}
+        empty_result = {"mean_iou": 0.0, "median_iou": 0.0, "frame_count": 0}
+        for _, key in IOU_COVERAGE_THRESHOLDS:
+            empty_result[key] = 0.0
+        return empty_result
 
     means = [float(s.get("mean_iou", 0.0)) for s in filtered]
     medians = [float(s.get("median_iou", 0.0)) for s in filtered]
 
     mean_value = float(sum(means) / len(means))
     median_value = float(np.median(np.asarray(medians, dtype=np.float32)))
-
-    return {"mean_iou": mean_value, "median_iou": median_value, "frame_count": len(filtered)}
+    result = {"mean_iou": mean_value, "median_iou": median_value, "frame_count": len(filtered)}
+    for threshold, key in IOU_COVERAGE_THRESHOLDS:
+        frame_coverages = []
+        for s in filtered:
+            if key in s:
+                frame_coverages.append(float(s.get(key, 0.0)))
+                continue
+            match_ious = s.get("match_ious")
+            if match_ious:
+                arr = np.asarray(tuple(float(v) for v in match_ious), dtype=np.float32)
+                frame_coverages.append(float(np.mean(arr >= threshold)))
+            else:
+                frame_coverages.append(0.0)
+        result[key] = float(sum(frame_coverages) / len(frame_coverages)) if frame_coverages else 0.0
+    return result

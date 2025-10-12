@@ -46,6 +46,7 @@ frame2kg-eval \
 
 Columns now include box closeness statistics:
 - `box_mean_iou`, `box_median_iou`: Mean and median IoU across matched node pairs (per frame, and summary rows)
+- `box_iou@0.5_coverage`, `box_iou@0.75_coverage`: Fraction of matched pairs with IoU ≥ 0.5 / ≥ 0.75 (per frame, and summary rows)
 - `box_std_iou`, `box_min_iou`, `box_max_iou`, `box_match_count`
 
 ### 2. frame2kg-sweep - Parameter Optimization
