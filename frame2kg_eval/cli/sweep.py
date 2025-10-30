@@ -2,19 +2,18 @@
 
 import click
 import csv
-import json
-import yaml
 from pathlib import Path
-from typing import Dict, List
 from itertools import product
 from tqdm import tqdm
 
+from frame2kg_eval.cli.evaluate import load_config
 from frame2kg_eval.io.preds import PredictionLoader
 from frame2kg_eval.io.groundtruth import create_ground_truth_adapter
 from frame2kg_eval.matching.assign import two_stage_node_match
 from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro
 from frame2kg_eval.metrics.edges import edge_prf1
 from frame2kg_eval.utils.logging import logger
+from frame2kg_eval.utils.seeding import MATCHING_SEED, seed_matching
 
 
 @click.command()
@@ -22,13 +21,13 @@ from frame2kg_eval.utils.logging import logger
               help="Directory containing prediction files")
 @click.option("--gt", type=str, required=True,
               help="Ground truth spec (hf:dataset:split or path)")
-@click.option("--taus", multiple=True, type=float, default=(0.3, 0.5, 0.7),
+@click.option("--taus", multiple=True, type=float, default=(),
               help="IoU thresholds to sweep (use multiple times: --taus 0.3 --taus 0.5)")
-@click.option("--alphas", multiple=True, type=float, default=(0.5, 0.7, 0.85),
+@click.option("--alphas", multiple=True, type=float, default=(),
               help="Alpha blending weights to sweep (use multiple times: --alphas 0.5 --alphas 0.7)")
-@click.option("--text-mode", type=click.Choice(["tfidf", "semantic", "hybrid"]), default="semantic",
+@click.option("--text-mode", type=click.Choice(["tfidf", "semantic", "hybrid"]), default=None,
               help="Text similarity mode")
-@click.option("--text-floor", type=float, default=0.25,
+@click.option("--text-floor", type=float, default=None,
               help="Minimum text similarity threshold")
 @click.option("--out", type=click.Path(path_type=Path), required=True,
               help="Output CSV file path")
@@ -38,21 +37,25 @@ from frame2kg_eval.utils.logging import logger
               help="Verbose output")
 def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose):
     """Sweep τ and α parameters to find optimal thresholds."""
-    
-    # Load base configuration
-    cfg = {}
-    if config and Path(config).exists():
-        with open(config) as f:
-            cfg = yaml.safe_load(f)
-    
-    # Set sweep parameters
-    tau_values = list(taus) if taus else cfg.get("default_taus", [0.3, 0.5, 0.7])
-    alpha_values = list(alphas) if alphas else cfg.get("default_alphas", [0.5, 0.7, 0.85])
-    
-    text_fields = tuple(cfg.get("text_fields", ["id", "label"]))
-    
+    cfg = load_config(config)
+
+    tau_values = list(taus) if taus else cfg.get("default_taus") or [cfg.get("tau", 0.3)]
+    alpha_values = list(alphas) if alphas else cfg.get("default_alphas") or [cfg.get("alpha", 0.7)]
+    cfg_text_mode = text_mode if text_mode is not None else cfg.get("text_mode", "semantic")
+    cfg_text_floor = text_floor if text_floor is not None else cfg.get("text_floor", 0.25)
+
+    raw_text_fields = cfg.get("text_fields")
+    if not raw_text_fields:
+        raw_text_fields = ["id", "label"]
+    text_fields = tuple(raw_text_fields)
+
+    predicate_mode = cfg.get("predicate_mode", "normalised")
+
+    seed_matching()
+
     logger.info(f"Sweeping τ={tau_values}, α={alpha_values}")
-    logger.info(f"Text mode: {text_mode}, floor: {text_floor}")
+    logger.info(f"Text mode: {cfg_text_mode}, floor: {cfg_text_floor}")
+    logger.info(f"Matching seed: {MATCHING_SEED}")
     
     # Load data
     logger.info(f"Loading predictions from {pred_dir}")
@@ -96,9 +99,9 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
                 frame["p_nodes"], frame["g_nodes"],
                 tau=tau,
                 alpha=alpha,
-                text_mode=text_mode,
+                text_mode=cfg_text_mode,
                 text_fields=text_fields,
-                text_floor=text_floor
+                text_floor=cfg_text_floor
             )
             
             # Node metrics
@@ -117,7 +120,7 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
             
             edge_metrics = edge_prf1(
                 frame["p_edges"], frame["g_edges"],
-                node_id_mapping, "exact"
+                node_id_mapping, predicate_mode
             )
             edge_metrics_list.append(edge_metrics)
         
@@ -129,8 +132,8 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
         results.append({
             "tau": tau,
             "alpha": alpha,
-            "text_mode": text_mode,
-            "text_floor": text_floor,
+            "text_mode": cfg_text_mode,
+            "text_floor": cfg_text_floor,
             "node_f1_micro": node_micro["f1"],
             "node_precision_micro": node_micro["precision"],
             "node_recall_micro": node_micro["recall"],

@@ -181,7 +181,7 @@ Create a YAML configuration file to set defaults:
 tau: 0.3
 alpha: 0.7
 text_mode: semantic
-text_fields: [id, label]  # Extend with attributes, or other node datapoints, etc. as needed
+text_fields: [label,attributes]  # Extend with attributes, or other node datapoints, etc. as needed
 text_floor: 0.25
 model_name: sentence-transformers/all-MiniLM-L6-v2
 predicate_mode: normalised  # Use exact for strict string equality, normalised for with normalisation, or semantic for embeddings (experimental - not used for frame2kg dataset eval)

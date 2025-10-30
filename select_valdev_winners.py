@@ -38,6 +38,8 @@ class EvalRecord:
     node_micro_f1: float
     edge_micro_f1: float
     box_mean_iou: float
+    box_iou_0p5_coverage: float
+    box_iou_0p75_coverage: float
     validity_rate: float
     conformity_rate: float
     node_macro_f1: float
@@ -121,6 +123,8 @@ def collect_records(results_dir: Path, preds_dir: Path) -> List[EvalRecord]:
         node_micro_f1 = micro.get("node_f1", float("nan"))
         edge_micro_f1 = micro.get("edge_f1", float("nan"))
         box_mean_iou = micro.get("box_mean_iou", float("nan"))
+        box_iou_0p5_coverage = micro.get("box_iou@0.5_coverage", float("nan"))
+        box_iou_0p75_coverage = micro.get("box_iou@0.75_coverage", float("nan"))
         node_macro_f1 = macro.get("node_f1", float("nan"))
 
         validity_stats = compute_validity_from_directory(pred_dir)
@@ -135,12 +139,16 @@ def collect_records(results_dir: Path, preds_dir: Path) -> List[EvalRecord]:
             node_micro_f1=node_micro_f1,
             edge_micro_f1=edge_micro_f1,
             box_mean_iou=box_mean_iou,
+            box_iou_0p5_coverage=box_iou_0p5_coverage,
+            box_iou_0p75_coverage=box_iou_0p75_coverage,
             validity_rate=validity_stats.get("validity_rate", float("nan")),
             conformity_rate=conformity_stats.get("conformity_rate_total", float("nan")),
             node_macro_f1=node_macro_f1,
             extra={
                 "edge_macro_f1": macro.get("edge_f1", float("nan")),
                 "box_macro_mean_iou": macro.get("box_mean_iou", float("nan")),
+                "box_macro_iou@0.5_coverage": macro.get("box_iou@0.5_coverage", float("nan")),
+                "box_macro_iou@0.75_coverage": macro.get("box_iou@0.75_coverage", float("nan")),
             },
         )
         records.append(record)
@@ -167,6 +175,8 @@ def write_summary(records: Iterable[EvalRecord], output_path: Path) -> None:
         "node_micro_f1",
         "edge_micro_f1",
         "box_mean_iou",
+        "box_iou@0.5_coverage",
+        "box_iou@0.75_coverage",
         "validity_rate",
         "conformity_rate",
         "node_macro_f1",
@@ -188,6 +198,8 @@ def write_summary(records: Iterable[EvalRecord], output_path: Path) -> None:
                     "node_micro_f1": f"{rec.node_micro_f1:.6f}" if not math.isnan(rec.node_micro_f1) else "",
                     "edge_micro_f1": f"{rec.edge_micro_f1:.6f}" if not math.isnan(rec.edge_micro_f1) else "",
                     "box_mean_iou": f"{rec.box_mean_iou:.6f}" if not math.isnan(rec.box_mean_iou) else "",
+                    "box_iou@0.5_coverage": f"{rec.box_iou_0p5_coverage:.2f}" if not math.isnan(rec.box_iou_0p5_coverage) else "",
+                    "box_iou@0.75_coverage": f"{rec.box_iou_0p75_coverage:.2f}" if not math.isnan(rec.box_iou_0p75_coverage) else "",
                     "validity_rate": f"{rec.validity_rate:.2f}" if not math.isnan(rec.validity_rate) else "",
                     "conformity_rate": f"{rec.conformity_rate:.2f}" if not math.isnan(rec.conformity_rate) else "",
                     "node_macro_f1": f"{rec.node_macro_f1:.6f}" if not math.isnan(rec.node_macro_f1) else "",
@@ -203,7 +215,10 @@ def print_winners(records: Iterable[EvalRecord]) -> None:
     for rec in records:
         grouped.setdefault((rec.size, rec.variant), []).append(rec)
 
-    print("Winner selection (node_micro_f1, edge_micro_f1, box_mean_iou, validity_rate, conformity_rate, node_macro_f1):")
+    print(
+        "Winner selection (node_micro_f1, edge_micro_f1, box_mean_iou, box_iou@0.5_coverage, "
+        "box_iou@0.75_coverage, validity_rate, conformity_rate, node_macro_f1):"
+    )
     for (size, variant), candidates in sorted(grouped.items()):
         winner = next((r for r in candidates if r.winner), None)
         if not winner:
@@ -212,6 +227,8 @@ def print_winners(records: Iterable[EvalRecord]) -> None:
             winner.node_micro_f1,
             winner.edge_micro_f1,
             winner.box_mean_iou,
+            winner.box_iou_0p5_coverage,
+            winner.box_iou_0p75_coverage,
             winner.validity_rate,
             winner.conformity_rate,
             winner.node_macro_f1,
@@ -231,7 +248,7 @@ def print_winners(records: Iterable[EvalRecord]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Select best validation_dev checkpoints per variant")
     parser.add_argument("--results-dir", type=Path, default=Path("results_valdev"), help="Directory with eval CSV files")
-    parser.add_argument("--preds-dir", type=Path, default=Path("preds"), help="Root directory of prediction outputs")
+    parser.add_argument("--preds-dir", type=Path, default=Path("preds_valdev"), help="Root directory of prediction outputs")
     parser.add_argument("--out", type=Path, default=None, help="Output CSV path for summary table")
     args = parser.parse_args()
 
