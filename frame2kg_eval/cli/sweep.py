@@ -4,6 +4,7 @@ import click
 import csv
 from pathlib import Path
 from itertools import product
+from typing import Dict
 from tqdm import tqdm
 
 from frame2kg_eval.cli.evaluate import load_config
@@ -14,6 +15,28 @@ from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro
 from frame2kg_eval.metrics.edges import edge_prf1
 from frame2kg_eval.utils.logging import logger
 from frame2kg_eval.utils.seeding import MATCHING_SEED, seed_matching
+
+
+def _empty_metrics(support: int, strict_mode: bool) -> Dict[str, float]:
+    """Mirror eval CLI behaviour for missing predictions."""
+    fp_penalty = support if strict_mode else 0
+    tp = 0
+    fp = fp_penalty
+    fn = support
+
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "support": support,
+    }
 
 
 @click.command()
@@ -50,39 +73,59 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
     text_fields = tuple(raw_text_fields)
 
     predicate_mode = cfg.get("predicate_mode", "normalised")
+    predicate_semantic_threshold = cfg.get("predicate_semantic_threshold", 0.6)
+    predicate_model_name = cfg.get("model_name")
 
     seed_matching()
+
+    include_invalid = bool(cfg.get("include_invalid", True))
+    strict_mode = bool(cfg.get("strict_mode", False))
 
     logger.info(f"Sweeping τ={tau_values}, α={alpha_values}")
     logger.info(f"Text mode: {cfg_text_mode}, floor: {cfg_text_floor}")
     logger.info(f"Matching seed: {MATCHING_SEED}")
-    
+
     # Load data
     logger.info(f"Loading predictions from {pred_dir}")
     pred_loader = PredictionLoader(pred_dir)
-    
+
     logger.info(f"Loading ground truth: {gt}")
     gt_adapter = create_ground_truth_adapter(gt)
-    
+
     # Collect all frames to evaluate
     frames_to_eval = []
-    pred_index = pred_loader.get_index()
-    
-    for (video_id, frame_no), _ in sorted(pred_index.items()):
+    gt_graphs = {}
+    for video_id, frame_no, graph in gt_adapter.iter_frames():
+        gt_graphs[(video_id, frame_no)] = graph
+
+    for (video_id, frame_no), gt_graph in sorted(gt_graphs.items()):
         pred_graph = pred_loader.get_graph(video_id, frame_no)
-        gt_graph = gt_adapter.get_graph(video_id, frame_no)
-        
-        if pred_graph and gt_graph:
+
+        if pred_graph is None:
+            if not include_invalid:
+                continue
             frames_to_eval.append({
                 "video_id": video_id,
                 "frame_no": frame_no,
-                "p_nodes": pred_graph["nodes"],
+                "p_nodes": [],
                 "g_nodes": gt_graph["nodes"],
-                "p_edges": pred_graph["edges"],
-                "g_edges": gt_graph["edges"]
+                "p_edges": [],
+                "g_edges": gt_graph["edges"],
+                "missing_pred": True,
             })
-    
-    logger.info(f"Found {len(frames_to_eval)} valid frames to evaluate")
+            continue
+
+        frames_to_eval.append({
+            "video_id": video_id,
+            "frame_no": frame_no,
+            "p_nodes": pred_graph["nodes"],
+            "g_nodes": gt_graph["nodes"],
+            "p_edges": pred_graph["edges"],
+            "g_edges": gt_graph["edges"],
+            "missing_pred": False,
+        })
+
+    logger.info(f"Prepared {len(frames_to_eval)} frames for evaluation")
     
     # Run sweep
     results = []
@@ -94,7 +137,11 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
         edge_metrics_list = []
         
         for frame in frames_to_eval:
-            # Node matching
+            if frame.get("missing_pred"):
+                node_metrics_list.append(_empty_metrics(len(frame["g_nodes"]), strict_mode))
+                edge_metrics_list.append(_empty_metrics(len(frame["g_edges"]), strict_mode))
+                continue
+
             match_result = two_stage_node_match(
                 frame["p_nodes"], frame["g_nodes"],
                 tau=tau,
@@ -103,24 +150,25 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
                 text_fields=text_fields,
                 text_floor=cfg_text_floor
             )
-            
-            # Node metrics
+
             node_metrics = node_prf1(
-                frame["p_nodes"], frame["g_nodes"], 
+                frame["p_nodes"], frame["g_nodes"],
                 match_result["mapping"]
             )
             node_metrics_list.append(node_metrics)
-            
-            # Edge metrics
+
             node_id_mapping = {}
             for p_idx, g_idx in match_result["mapping"].items():
                 p_id = frame["p_nodes"][p_idx]["id"]
                 g_id = frame["g_nodes"][g_idx]["id"]
                 node_id_mapping[p_id] = g_id
-            
+
             edge_metrics = edge_prf1(
                 frame["p_edges"], frame["g_edges"],
-                node_id_mapping, predicate_mode
+                node_id_mapping,
+                predicate_mode,
+                semantic_threshold=predicate_semantic_threshold,
+                model_name=predicate_model_name,
             )
             edge_metrics_list.append(edge_metrics)
         
