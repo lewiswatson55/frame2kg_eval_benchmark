@@ -76,15 +76,12 @@ def _empty_box_stats() -> Dict[str, float]:
 def load_config(config_path: Optional[Path] = None, legacy_paper_config: bool = False) -> Dict:
     """Load configuration from file or use defaults."""
     default_config_path = Path(__file__).parent.parent / "config" / "defaults.yaml"
-    
-    if config_path and config_path.exists():
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-    elif default_config_path.exists():
+
+    if default_config_path.exists():
         with open(default_config_path) as f:
             config = yaml.safe_load(f)
     else:
-        # Hardcoded defaults as fallback
+        # Hardcoded defaults as fallback when the packaged config is unavailable.
         config = {
             "tau": 0.3,
             "alpha": 0.7,
@@ -95,6 +92,11 @@ def load_config(config_path: Optional[Path] = None, legacy_paper_config: bool = 
             "predicate_mode": "normalised",
             "predicate_semantic_threshold": 0.6,
         }
+
+    if config_path and config_path.exists():
+        with open(config_path) as f:
+            user_config = yaml.safe_load(f) or {}
+        config = {**config, **user_config}
 
     if legacy_paper_config:
         config.update(LEGACY_PAPER_CONFIG_OVERRIDES)
