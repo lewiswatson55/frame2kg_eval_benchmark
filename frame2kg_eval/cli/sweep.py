@@ -57,11 +57,14 @@ def _empty_metrics(support: int, strict_mode: bool) -> Dict[str, float]:
               help="Output CSV file path")
 @click.option("--config", type=click.Path(exists=True, path_type=Path), default=None,
               help="Configuration file path")
+@click.option("--legacy-paper-config/--no-legacy-paper-config", default=False,
+              help="Use the evaluation configuration from the LREC 2026 paper")
 @click.option("--verbose/--quiet", default=True,
               help="Verbose output")
-def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose):
+def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config,
+         legacy_paper_config, verbose):
     """Sweep τ and α parameters to find optimal thresholds."""
-    cfg = load_config(config)
+    cfg = load_config(config, legacy_paper_config=legacy_paper_config)
 
     tau_values = list(taus) if taus else cfg.get("default_taus") or [cfg.get("tau", 0.3)]
     alpha_values = list(alphas) if alphas else cfg.get("default_alphas") or [cfg.get("alpha", 0.7)]
@@ -93,6 +96,7 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
     strict_mode = bool(cfg.get("strict_mode", False))
 
     logger.info(f"Sweeping τ={tau_values}, α={alpha_values}")
+    logger.info(f"Config profile: {cfg.get('config_profile', 'default')}")
     logger.info(f"Text mode: {cfg_text_mode}, floor: {cfg_text_floor}")
     logger.info(f"Matching seed: {MATCHING_SEED}")
 

@@ -25,6 +25,13 @@ frame2kg-eval \
   --gt hf:lewiswatson/Frame2KG-YC2:validation_dev \
   --out results.csv
 
+# Reproduce the LREC 2026 paper evaluation configuration
+frame2kg-eval \
+  --pred-dir ./predictions \
+  --gt hf:lewiswatson/Frame2KG-YC2:validation_dev \
+  --legacy-paper-config \
+  --out results.csv
+
 # With custom parameters
 frame2kg-eval \
   --pred-dir ./predictions \
@@ -43,6 +50,9 @@ frame2kg-eval \
 ```
 
 **Output**: CSV file with per-frame metrics and aggregated results (micro/macro).
+
+The default evaluation uses the intended node text fields: `label, attributes`.
+The `--legacy-paper-config` flag reproduces the configuration used for the LREC 2026 paper.
 
 Columns now include box closeness statistics:
 - `box_mean_iou`, `box_median_iou`: Mean and median IoU across matched node pairs (per frame, and summary rows)

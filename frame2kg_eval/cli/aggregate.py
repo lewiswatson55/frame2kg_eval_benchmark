@@ -3,11 +3,11 @@
 import click
 import csv
 import json
-import yaml
 from pathlib import Path
 from typing import Dict, List, Tuple
 from tqdm import tqdm
 
+from frame2kg_eval.cli.evaluate import load_config
 from frame2kg_eval.io.preds import PredictionLoader
 from frame2kg_eval.io.groundtruth import create_ground_truth_adapter
 from frame2kg_eval.matching.assign import two_stage_node_match
@@ -223,18 +223,18 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
               help="Output CSV file path")
 @click.option("--config", type=click.Path(exists=True, path_type=Path), default=None,
               help="Configuration file path")
+@click.option("--legacy-paper-config/--no-legacy-paper-config", default=False,
+              help="Use the evaluation configuration from the LREC 2026 paper")
 @click.option("--pattern", type=str, default="*/*",
               help="Directory pattern for finding runs (e.g., '*/*' for variant/index)")
 @click.option("--verbose/--quiet", default=True,
               help="Verbose output")
-def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern, verbose):
+def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config,
+         legacy_paper_config, pattern, verbose):
     """Aggregate evaluation across multiple prediction runs."""
     
     # Load configuration
-    cfg = {}
-    if config and Path(config).exists():
-        with open(config) as f:
-            cfg = yaml.safe_load(f)
+    cfg = load_config(config, legacy_paper_config=legacy_paper_config)
     
     # Override with CLI arguments
     cfg.update({
@@ -242,9 +242,9 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config, pattern,
         "alpha": alpha,
         "text_mode": text_mode,
         "text_floor": text_floor,
-        "text_fields": cfg.get("text_fields", ["id", "label"])
     })
     
+    logger.info(f"Config profile: {cfg.get('config_profile', 'default')}")
     logger.info(f"Configuration: τ={tau}, α={alpha}, mode={text_mode}")
     logger.info(f"Matching seed: {MATCHING_SEED}")
     

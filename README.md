@@ -38,6 +38,13 @@ frame2kg-eval \
   --text-mode semantic \
   --out results.csv
 
+# Reproduce the LREC 2026 paper evaluation configuration
+frame2kg-eval \
+  --pred-dir ./predictions/model-v1/run1 \
+  --gt hf:lewiswatson/Frame2KG-YC2:validation_dev \
+  --legacy-paper-config \
+  --out results.csv
+
 # With composite diagnostics (optional)
 frame2kg-eval \
   --pred-dir ./predictions/model-v1/run1 \
@@ -160,6 +167,9 @@ model_name: sentence-transformers/all-MiniLM-L6-v2
 predicate_mode: normalised
 predicate_semantic_threshold: 0.6
 ```
+
+The default evaluation uses the intended node text fields: `label, attributes`.
+The `--legacy-paper-config` flag reproduces the configuration used for the LREC 2026 paper.
 
 Specify as many `text_fields` as required, nested containers (like attribute dictionaries or lists of tags) are flattened before text similarity is computed.
 
