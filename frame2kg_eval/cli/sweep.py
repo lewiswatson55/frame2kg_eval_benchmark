@@ -184,8 +184,6 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
                 text_computer=semantic_text_computer,
             )
             edge_metrics_list.append(edge_metrics)
-
-            clear_text_computer_caches(shared_text_computer, semantic_text_computer)
         
         # Aggregate metrics
         node_micro = aggregate_micro(node_metrics_list)
@@ -206,6 +204,8 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
             "combined_f1": (node_micro["f1"] + edge_micro["f1"]) / 2,
             "num_frames": len(frames_to_eval)
         })
+
+        clear_text_computer_caches(shared_text_computer, semantic_text_computer)
     
     # Sort by combined F1
     results.sort(key=lambda x: x["combined_f1"], reverse=True)
