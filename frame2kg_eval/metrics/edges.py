@@ -20,7 +20,8 @@ def edge_prf1(
     predicate_mode: str = "exact",
     *,
     semantic_threshold: float = 0.6,
-    model_name: Optional[str] = None
+    model_name: Optional[str] = None,
+    text_computer: Optional[TextSimilarityComputer] = None,
 ) -> Dict:
     """Compute edge precision, recall, and F1.
     
@@ -33,6 +34,7 @@ def edge_prf1(
         predicate_mode: How to match predicates ("exact", "normalised", or "semantic")
         semantic_threshold: Minimum similarity required for semantic predicate matches
         model_name: Optional sentence transformer model name to override default
+        text_computer: Optional shared text similarity computer for semantic matching
     
     Returns:
         Dictionary with metrics:
@@ -87,7 +89,8 @@ def edge_prf1(
         fp = len(p_edges) - tp
         fn = len(g_edges) - tp
     else:  # semantic predicate matching
-        text_computer = TextSimilarityComputer(mode="semantic", model_name=model_name)
+        if text_computer is None:
+            text_computer = TextSimilarityComputer(mode="semantic", model_name=model_name)
 
         pred_groups: Dict[Tuple[str, str], List[Tuple[int, str]]] = defaultdict(list)
         for i, p_edge in enumerate(p_edges):

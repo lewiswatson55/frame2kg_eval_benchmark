@@ -11,6 +11,7 @@ from tqdm import tqdm
 from frame2kg_eval.io.preds import PredictionLoader
 from frame2kg_eval.io.groundtruth import create_ground_truth_adapter
 from frame2kg_eval.matching.assign import two_stage_node_match
+from frame2kg_eval.matching.text import TextSimilarityComputer
 from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro
 from frame2kg_eval.metrics.edges import edge_prf1
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
@@ -79,6 +80,18 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
 
     include_invalid = bool(config.get("include_invalid", True))
     strict_mode = bool(config.get("strict_mode", False))
+    text_mode = config.get("text_mode", "semantic")
+
+    shared_text_computer = TextSimilarityComputer(
+        mode=text_mode,
+        model_name=config.get("model_name"),
+    )
+    semantic_text_computer = shared_text_computer if text_mode == "semantic" else None
+    if config.get("predicate_mode") == "semantic" and semantic_text_computer is None:
+        semantic_text_computer = TextSimilarityComputer(
+            mode="semantic",
+            model_name=config.get("model_name"),
+        )
 
     node_metrics_list: List[Dict] = []
     edge_metrics_list: List[Dict] = []
@@ -128,9 +141,10 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
                 p_nodes, g_nodes,
                 tau=config["tau"],
                 alpha=config["alpha"],
-                text_mode=config["text_mode"],
+                text_mode=text_mode,
                 text_fields=tuple(config["text_fields"]),
-                text_floor=config["text_floor"]
+                text_floor=config["text_floor"],
+                text_computer=shared_text_computer,
             )
 
             node_metrics = node_prf1(p_nodes, g_nodes, match_result["mapping"])
@@ -150,6 +164,7 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
                 config.get("predicate_mode", "exact"),
                 semantic_threshold=config.get("predicate_semantic_threshold", 0.6),
                 model_name=config.get("model_name"),
+                text_computer=semantic_text_computer,
             )
 
         node_metrics_list.append(node_metrics)

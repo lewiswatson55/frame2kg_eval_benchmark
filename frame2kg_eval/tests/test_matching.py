@@ -236,6 +236,43 @@ class TestTwoStageMatching:
         assert result["matrices"]["iou"][0, 1] == 0.0  # No overlap
         assert result["matrices"]["iou"][1, 0] == 0.0  # No overlap
 
+    def test_reuses_injected_text_computer(self, monkeypatch):
+        """Ensure callers can reuse one text computer across frame matches."""
+        p_nodes = [{"id": "p1", "label": "person", "location": [0.1, 0.1, 0.2, 0.2]}]
+        g_nodes = [{"id": "g1", "label": "person", "location": [0.1, 0.1, 0.2, 0.2]}]
+
+        class StubTextComputer:
+            def __init__(self):
+                self.calls = 0
+
+            def compute_similarity_matrix(self, pred_nodes, gt_nodes, text_fields=("id", "label")):
+                self.calls += 1
+                return np.array([[0.99]], dtype=np.float32)
+
+        def fail_if_constructed(*args, **kwargs):
+            raise AssertionError("two_stage_node_match should reuse the injected text computer")
+
+        shared_text_computer = StubTextComputer()
+        monkeypatch.setattr(
+            "frame2kg_eval.matching.assign.TextSimilarityComputer",
+            fail_if_constructed,
+        )
+
+        result = two_stage_node_match(
+            p_nodes,
+            g_nodes,
+            tau=0.3,
+            alpha=0.7,
+            text_mode="semantic",
+            text_fields=("label",),
+            text_floor=0.1,
+            text_computer=shared_text_computer,
+        )
+
+        assert result["mapping"] == {0: 0}
+        assert result["text_computer"] is shared_text_computer
+        assert shared_text_computer.calls == 1
+
 
 class TestEdgeMapping:
     
@@ -386,6 +423,41 @@ class TestEdgeMapping:
         )
 
         assert edge_mapping == {0: 0}
+
+    def test_edge_mapping_reuses_injected_text_computer(self, monkeypatch):
+        """Ensure semantic edge mapping can reuse a shared text computer."""
+        p_edges = [{"source": "p1", "target": "p2", "predicate": "next to"}]
+        g_edges = [{"source": "g1", "target": "g2", "predicate": "beside"}]
+        node_mapping = {"p1": "g1", "p2": "g2"}
+
+        class StubTextComputer:
+            def __init__(self):
+                self.calls = 0
+
+            def compute_semantic_similarity(self, texts1, texts2):
+                self.calls += 1
+                return np.array([[0.95]], dtype=np.float32)
+
+        def fail_if_constructed(*args, **kwargs):
+            raise AssertionError("compute_edge_mapping should reuse the injected text computer")
+
+        shared_text_computer = StubTextComputer()
+        monkeypatch.setattr(
+            "frame2kg_eval.matching.assign.TextSimilarityComputer",
+            fail_if_constructed,
+        )
+
+        edge_mapping = compute_edge_mapping(
+            p_edges,
+            g_edges,
+            node_mapping,
+            "semantic",
+            semantic_threshold=0.8,
+            text_computer=shared_text_computer,
+        )
+
+        assert edge_mapping == {0: 0}
+        assert shared_text_computer.calls == 1
 
     def test_edge_mapping_empty(self):
         """Test edge mapping with empty inputs."""
