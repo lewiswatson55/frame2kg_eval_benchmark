@@ -25,6 +25,22 @@ frame2kg-eval \
   --gt hf:lewiswatson/Frame2KG-YC2:validation_dev \
   --out results.csv
 
+# Reproduce the published full test-set evaluation from the LREC 2026 paper
+frame2kg-eval \
+  --pred-dir ./predictions \
+  --gt hf:lewiswatson/Frame2KG-YC2:testing \
+  --text-fields labels \
+  --text-fields attributes \
+  --out results.csv
+
+# Reproduce the validation-dev checkpoint-selection setup used in other stages
+frame2kg-eval \
+  --pred-dir ./predictions \
+  --gt hf:lewiswatson/Frame2KG-YC2:validation_dev \
+  --text-fields label \
+  --text-fields attributes \
+  --out results.csv
+
 # With custom parameters
 frame2kg-eval \
   --pred-dir ./predictions \
@@ -43,6 +59,9 @@ frame2kg-eval \
 ```
 
 **Output**: CSV file with per-frame metrics and aggregated results (micro/macro).
+
+The default evaluation uses the intended node text fields: `label, attributes`.
+For exact reproduction of the LREC 2026 paper results, the field selection should be specified explicitly via `--text-fields`. In particular, the published full test-set evaluation used `labels, attributes`, while other stages used `label, attributes`.
 
 Columns now include box closeness statistics:
 - `box_mean_iou`, `box_median_iou`: Mean and median IoU across matched node pairs (per frame, and summary rows)

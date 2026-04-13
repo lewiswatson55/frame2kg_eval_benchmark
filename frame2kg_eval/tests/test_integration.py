@@ -4,6 +4,7 @@ import pytest
 import json
 import tempfile
 from pathlib import Path
+
 from frame2kg_eval.cli.evaluate import load_config
 from frame2kg_eval.io.preds import PredictionLoader, index_predictions
 from frame2kg_eval.io.groundtruth import LocalJsonAdapter, create_ground_truth_adapter

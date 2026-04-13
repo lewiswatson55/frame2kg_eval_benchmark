@@ -59,23 +59,20 @@ def _empty_metrics(support: int, strict_mode: bool) -> Dict[str, float]:
               help="Configuration file path")
 @click.option("--verbose/--quiet", default=True,
               help="Verbose output")
-def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose):
+def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config,
+         verbose):
     """Sweep τ and α parameters to find optimal thresholds."""
     cfg = load_config(config)
 
-    tau_values = list(taus) if taus else cfg.get("default_taus") or [cfg.get("tau", 0.3)]
-    alpha_values = list(alphas) if alphas else cfg.get("default_alphas") or [cfg.get("alpha", 0.7)]
-    cfg_text_mode = text_mode if text_mode is not None else cfg.get("text_mode", "semantic")
-    cfg_text_floor = text_floor if text_floor is not None else cfg.get("text_floor", 0.25)
+    tau_values = list(taus) if taus else (cfg["default_taus"] or [cfg["tau"]])
+    alpha_values = list(alphas) if alphas else (cfg["default_alphas"] or [cfg["alpha"]])
+    cfg_text_mode = text_mode if text_mode is not None else cfg["text_mode"]
+    cfg_text_floor = text_floor if text_floor is not None else cfg["text_floor"]
+    text_fields = tuple(cfg["text_fields"])
 
-    raw_text_fields = cfg.get("text_fields")
-    if not raw_text_fields:
-        raw_text_fields = ["id", "label"]
-    text_fields = tuple(raw_text_fields)
-
-    predicate_mode = cfg.get("predicate_mode", "normalised")
-    predicate_semantic_threshold = cfg.get("predicate_semantic_threshold", 0.6)
-    predicate_model_name = cfg.get("model_name")
+    predicate_mode = cfg["predicate_mode"]
+    predicate_semantic_threshold = cfg["predicate_semantic_threshold"]
+    predicate_model_name = cfg["model_name"]
     shared_text_computer = TextSimilarityComputer(
         mode=cfg_text_mode,
         model_name=predicate_model_name,
@@ -89,8 +86,8 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
 
     seed_matching()
 
-    include_invalid = bool(cfg.get("include_invalid", True))
-    strict_mode = bool(cfg.get("strict_mode", False))
+    include_invalid = bool(cfg["include_invalid"])
+    strict_mode = bool(cfg["strict_mode"])
 
     logger.info(f"Sweeping τ={tau_values}, α={alpha_values}")
     logger.info(f"Text mode: {cfg_text_mode}, floor: {cfg_text_floor}")
