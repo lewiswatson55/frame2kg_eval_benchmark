@@ -12,7 +12,7 @@ from tqdm import tqdm
 from frame2kg_eval.io.preds import PredictionLoader
 from frame2kg_eval.io.groundtruth import create_ground_truth_adapter
 from frame2kg_eval.matching.assign import two_stage_node_match
-from frame2kg_eval.matching.text import TextSimilarityComputer
+from frame2kg_eval.matching.text import TextSimilarityComputer, clear_text_computer_caches
 from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro, aggregate_macro
 from frame2kg_eval.metrics.edges import edge_prf1, edge_by_label_baseline
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
@@ -344,6 +344,8 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
             })
 
         frame_results.append(frame_result)
+
+        clear_text_computer_caches(shared_text_computer, semantic_text_computer)
 
         if verbose:
             pbar.update(1)

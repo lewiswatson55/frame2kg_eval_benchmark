@@ -11,7 +11,7 @@ from tqdm import tqdm
 from frame2kg_eval.io.preds import PredictionLoader
 from frame2kg_eval.io.groundtruth import create_ground_truth_adapter
 from frame2kg_eval.matching.assign import two_stage_node_match
-from frame2kg_eval.matching.text import TextSimilarityComputer
+from frame2kg_eval.matching.text import TextSimilarityComputer, clear_text_computer_caches
 from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro
 from frame2kg_eval.metrics.edges import edge_prf1
 from frame2kg_eval.metrics.validity import compute_validity_from_directory
@@ -170,6 +170,8 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
         node_metrics_list.append(node_metrics)
         edge_metrics_list.append(edge_metrics)
         box_stats_list.append(box_stats)
+
+        clear_text_computer_caches(shared_text_computer, semantic_text_computer)
 
     if extra_predictions:
         logger.warning(f"[{pred_dir}] {len(extra_predictions)} prediction files have no matching ground truth and were ignored.")
