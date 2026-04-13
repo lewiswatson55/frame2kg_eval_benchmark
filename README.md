@@ -38,11 +38,20 @@ frame2kg-eval \
   --text-mode semantic \
   --out results.csv
 
-# Reproduce the LREC 2026 paper evaluation configuration
+# Reproduce the published full test-set evaluation from the LREC 2026 paper
+frame2kg-eval \
+  --pred-dir ./predictions/model-v1/run1 \
+  --gt hf:lewiswatson/Frame2KG-YC2:testing \
+  --text-fields labels \
+  --text-fields attributes \
+  --out results.csv
+
+# Reproduce the validation-dev checkpoint-selection setup used in other stages
 frame2kg-eval \
   --pred-dir ./predictions/model-v1/run1 \
   --gt hf:lewiswatson/Frame2KG-YC2:validation_dev \
-  --legacy-paper-config \
+  --text-fields label \
+  --text-fields attributes \
   --out results.csv
 
 # With composite diagnostics (optional)
@@ -169,7 +178,7 @@ predicate_semantic_threshold: 0.6
 ```
 
 The default evaluation uses the intended node text fields: `label, attributes`.
-The `--legacy-paper-config` flag reproduces the configuration used for the LREC 2026 paper.
+For exact reproduction of the LREC 2026 paper results, the field selection should be specified explicitly via `--text-fields`. In particular, the published full test-set evaluation used `labels, attributes`, while other stages used `label, attributes`.
 
 Specify as many `text_fields` as required, nested containers (like attribute dictionaries or lists of tags) are flattened before text similarity is computed.
 

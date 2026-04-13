@@ -223,18 +223,16 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
               help="Output CSV file path")
 @click.option("--config", type=click.Path(exists=True, path_type=Path), default=None,
               help="Configuration file path")
-@click.option("--legacy-paper-config/--no-legacy-paper-config", default=False,
-              help="Use the evaluation configuration from the LREC 2026 paper")
 @click.option("--pattern", type=str, default="*/*",
               help="Directory pattern for finding runs (e.g., '*/*' for variant/index)")
 @click.option("--verbose/--quiet", default=True,
               help="Verbose output")
 def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config,
-         legacy_paper_config, pattern, verbose):
+         pattern, verbose):
     """Aggregate evaluation across multiple prediction runs."""
     
     # Load configuration
-    cfg = load_config(config, legacy_paper_config=legacy_paper_config)
+    cfg = load_config(config)
     
     # Override with CLI arguments
     cfg.update({
@@ -244,7 +242,6 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config,
         "text_floor": text_floor,
     })
     
-    logger.info(f"Config profile: {cfg.get('config_profile', 'default')}")
     logger.info(f"Configuration: τ={tau}, α={alpha}, mode={text_mode}")
     logger.info(f"Matching seed: {MATCHING_SEED}")
     

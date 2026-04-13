@@ -272,7 +272,6 @@ class TestCLIImports:
     def test_default_config_uses_label_text_field(self):
         config = load_config()
         assert config["text_fields"] == ["label", "attributes"]
-        assert config["config_profile"] == "default"
 
 
 class TestSchemaValidation:

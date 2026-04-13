@@ -29,11 +29,6 @@ from frame2kg_eval.utils.logging import logger
 from frame2kg_eval.utils.seeding import seed_matching, MATCHING_SEED
 
 
-LEGACY_PAPER_CONFIG_OVERRIDES = {
-    "text_fields": ["labels", "attributes"],
-}
-
-
 def _empty_prf(support: int, fp_penalty: int = 0) -> Dict[str, float]:
     """Build a zeroed precision/recall/F1 record with optional FP penalty."""
 
@@ -73,7 +68,7 @@ def _empty_box_stats() -> Dict[str, float]:
     return stats
 
 
-def load_config(config_path: Optional[Path] = None, legacy_paper_config: bool = False) -> Dict:
+def load_config(config_path: Optional[Path] = None) -> Dict:
     """Load configuration from file or use defaults."""
     default_config_path = Path(__file__).parent.parent / "config" / "defaults.yaml"
 
@@ -98,11 +93,6 @@ def load_config(config_path: Optional[Path] = None, legacy_paper_config: bool = 
             user_config = yaml.safe_load(f) or {}
         config = {**config, **user_config}
 
-    if legacy_paper_config:
-        config.update(LEGACY_PAPER_CONFIG_OVERRIDES)
-
-    config["config_profile"] = "legacy-paper-config" if legacy_paper_config else "default"
-
     return config
 
 
@@ -125,8 +115,6 @@ def load_config(config_path: Optional[Path] = None, legacy_paper_config: bool = 
               help="Output file path (CSV or JSON)")
 @click.option("--config", type=click.Path(exists=True, path_type=Path), default=None,
               help="Configuration file path")
-@click.option("--legacy-paper-config/--no-legacy-paper-config", default=False,
-              help="Use the evaluation configuration from the LREC 2026 paper")
 @click.option("--edge-baseline/--no-edge-baseline", default=False,
               help="Include edge-by-label baseline metrics")
 @click.option("--composite-diagnostics/--no-composite-diagnostics", default=False,
@@ -134,11 +122,11 @@ def load_config(config_path: Optional[Path] = None, legacy_paper_config: bool = 
 @click.option("--verbose/--quiet", default=True,
               help="Verbose output")
 def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, config,
-         legacy_paper_config, edge_baseline, composite_diagnostics, verbose):
+         edge_baseline, composite_diagnostics, verbose):
     """Evaluate Frame2KG predictions against ground truth."""
     
     # Load configuration
-    cfg = load_config(config, legacy_paper_config=legacy_paper_config)
+    cfg = load_config(config)
     
     # Override with CLI arguments
     if tau is not None:
@@ -156,7 +144,6 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     seed_matching()
 
     if verbose:
-        logger.info(f"Config profile: {cfg.get('config_profile', 'default')}")
         logger.info(f"Configuration: τ={cfg['tau']}, α={cfg['alpha']}, mode={cfg['text_mode']}")
         logger.info(f"Matching seed: {MATCHING_SEED}")
     
