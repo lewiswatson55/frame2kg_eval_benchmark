@@ -4,6 +4,7 @@ import pytest
 import json
 import tempfile
 from pathlib import Path
+from frame2kg_eval.cli.evaluate import load_config
 from frame2kg_eval.io.preds import PredictionLoader, index_predictions
 from frame2kg_eval.io.groundtruth import LocalJsonAdapter, create_ground_truth_adapter
 from frame2kg_eval.io.schema import validate_graph, standardize_graph
@@ -266,6 +267,10 @@ class TestCLIImports:
     def test_import_doctor(self):
         from frame2kg_eval.cli import doctor
         assert hasattr(doctor, 'main')
+
+    def test_default_config_uses_label_text_field(self):
+        config = load_config()
+        assert config["text_fields"] == ["label", "attributes"]
 
 
 class TestSchemaValidation:

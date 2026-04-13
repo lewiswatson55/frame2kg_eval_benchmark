@@ -20,7 +20,8 @@ def two_stage_node_match(
     text_mode: str = "tfidf",
     text_fields: Tuple[str, ...] = ("id", "label"),
     text_floor: float = 0.25,
-    sim_cache: Optional[Dict] = None
+    sim_cache: Optional[Dict] = None,
+    text_computer: Optional[TextSimilarityComputer] = None,
 ) -> Dict:
     """Two-stage node matching with IoU gating and text similarity.
     
@@ -33,12 +34,14 @@ def two_stage_node_match(
         text_fields: Node fields to use for text similarity
         text_floor: Minimum text similarity to consider
         sim_cache: Optional cache for embeddings (passed to TextSimilarityComputer)
+        text_computer: Optional shared text similarity computer to reuse across calls
     
     Returns:
         Dictionary containing:
             - mapping: Dict[int, int] mapping pred indices to gt indices
             - unmatched_pred: Set of unmatched prediction indices
             - unmatched_gt: Set of unmatched ground truth indices
+            - text_computer: The text similarity computer used for this match
             - matrices: Dict with iou, text_sim, and score matrices
     """
     n_pred = len(p_nodes)
@@ -50,6 +53,7 @@ def two_stage_node_match(
             "mapping": {},
             "unmatched_pred": set(range(n_pred)),
             "unmatched_gt": set(range(n_gt)),
+            "text_computer": text_computer,
             "matrices": {
                 "iou": np.zeros((n_pred, n_gt), dtype=np.float32),
                 "text_sim": np.zeros((n_pred, n_gt), dtype=np.float32),
@@ -65,7 +69,8 @@ def two_stage_node_match(
     iou_matrix = compute_iou_matrix(pred_boxes, gt_boxes)
     
     # Compute text similarity matrix
-    text_computer = TextSimilarityComputer(mode=text_mode)
+    if text_computer is None:
+        text_computer = TextSimilarityComputer(mode=text_mode)
     if sim_cache is not None and hasattr(text_computer, '_embedding_cache'):
         text_computer._embedding_cache = sim_cache
     
@@ -117,6 +122,7 @@ def two_stage_node_match(
         "mapping": mapping,
         "unmatched_pred": unmatched_pred,
         "unmatched_gt": unmatched_gt,
+        "text_computer": text_computer,
         "matrices": {
             "iou": iou_matrix,
             "text_sim": text_sim_matrix,
@@ -132,7 +138,8 @@ def compute_edge_mapping(
     predicate_mode: str = "exact",
     *,
     semantic_threshold: float = 0.6,
-    model_name: Optional[str] = None
+    model_name: Optional[str] = None,
+    text_computer: Optional[TextSimilarityComputer] = None,
 ) -> Dict[int, int]:
     """Map edges based on node mapping and predicate matching.
     
@@ -140,7 +147,10 @@ def compute_edge_mapping(
         p_edges: Predicted edges
         g_edges: Ground truth edges
         node_mapping: Mapping from predicted node IDs to GT node IDs
-        predicate_mode: How to match predicates ("exact" or "normalised")
+        predicate_mode: How to match predicates ("exact", "normalised", or "semantic")
+        semantic_threshold: Minimum similarity required for semantic predicate matches
+        model_name: Optional sentence transformer model name to override default
+        text_computer: Optional shared text similarity computer for semantic matching
     
     Returns:
         Dict mapping predicted edge indices to GT edge indices
@@ -181,7 +191,8 @@ def compute_edge_mapping(
             if sig in gt_edge_sigs:
                 edge_mapping[i] = gt_edge_sigs[sig]
     elif predicate_mode == "semantic":
-        text_computer = TextSimilarityComputer(mode="semantic", model_name=model_name)
+        if text_computer is None:
+            text_computer = TextSimilarityComputer(mode="semantic", model_name=model_name)
 
         pred_groups: Dict[Tuple[str, str], List[Tuple[int, str]]] = defaultdict(list)
         for i, p_edge in enumerate(p_edges):

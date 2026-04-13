@@ -11,6 +11,7 @@ from frame2kg_eval.cli.evaluate import load_config
 from frame2kg_eval.io.preds import PredictionLoader
 from frame2kg_eval.io.groundtruth import create_ground_truth_adapter
 from frame2kg_eval.matching.assign import two_stage_node_match
+from frame2kg_eval.matching.text import TextSimilarityComputer, clear_text_computer_caches
 from frame2kg_eval.metrics.nodes import node_prf1, aggregate_micro
 from frame2kg_eval.metrics.edges import edge_prf1
 from frame2kg_eval.utils.logging import logger
@@ -75,6 +76,16 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
     predicate_mode = cfg.get("predicate_mode", "normalised")
     predicate_semantic_threshold = cfg.get("predicate_semantic_threshold", 0.6)
     predicate_model_name = cfg.get("model_name")
+    shared_text_computer = TextSimilarityComputer(
+        mode=cfg_text_mode,
+        model_name=predicate_model_name,
+    )
+    semantic_text_computer = shared_text_computer if cfg_text_mode == "semantic" else None
+    if predicate_mode == "semantic" and semantic_text_computer is None:
+        semantic_text_computer = TextSimilarityComputer(
+            mode="semantic",
+            model_name=predicate_model_name,
+        )
 
     seed_matching()
 
@@ -148,7 +159,8 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
                 alpha=alpha,
                 text_mode=cfg_text_mode,
                 text_fields=text_fields,
-                text_floor=cfg_text_floor
+                text_floor=cfg_text_floor,
+                text_computer=shared_text_computer,
             )
 
             node_metrics = node_prf1(
@@ -169,6 +181,7 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
                 predicate_mode,
                 semantic_threshold=predicate_semantic_threshold,
                 model_name=predicate_model_name,
+                text_computer=semantic_text_computer,
             )
             edge_metrics_list.append(edge_metrics)
         
@@ -191,6 +204,8 @@ def main(pred_dir, gt, taus, alphas, text_mode, text_floor, out, config, verbose
             "combined_f1": (node_micro["f1"] + edge_micro["f1"]) / 2,
             "num_frames": len(frames_to_eval)
         })
+
+        clear_text_computer_caches(shared_text_computer, semantic_text_computer)
     
     # Sort by combined F1
     results.sort(key=lambda x: x["combined_f1"], reverse=True)

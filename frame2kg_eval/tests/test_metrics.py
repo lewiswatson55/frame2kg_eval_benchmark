@@ -239,6 +239,42 @@ class TestEdgeMetrics:
         assert metrics["fp"] == 1
         assert metrics["fn"] == 1
 
+    def test_edge_prf1_reuses_injected_text_computer(self, monkeypatch):
+        p_edges = [{"source": "p1", "target": "p2", "predicate": "next to"}]
+        g_edges = [{"source": "g1", "target": "g2", "predicate": "beside"}]
+        node_mapping = {"p1": "g1", "p2": "g2"}
+
+        class StubTextComputer:
+            def __init__(self):
+                self.calls = 0
+
+            def compute_semantic_similarity(self, texts1, texts2):
+                self.calls += 1
+                return np.array([[0.95]], dtype=np.float32)
+
+        def fail_if_constructed(*args, **kwargs):
+            raise AssertionError("edge_prf1 should reuse the injected text computer")
+
+        shared_text_computer = StubTextComputer()
+        monkeypatch.setattr(
+            "frame2kg_eval.metrics.edges.TextSimilarityComputer",
+            fail_if_constructed,
+        )
+
+        metrics = edge_prf1(
+            p_edges,
+            g_edges,
+            node_mapping,
+            "semantic",
+            semantic_threshold=0.8,
+            text_computer=shared_text_computer,
+        )
+
+        assert metrics["tp"] == 1
+        assert metrics["fp"] == 0
+        assert metrics["fn"] == 0
+        assert shared_text_computer.calls == 1
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
