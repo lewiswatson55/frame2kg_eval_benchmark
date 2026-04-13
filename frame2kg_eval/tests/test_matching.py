@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 from frame2kg_eval.matching.assign import two_stage_node_match, compute_edge_mapping
-from frame2kg_eval.matching.text import TextSimilarityComputer
+from frame2kg_eval.matching.text import TextSimilarityComputer, clear_text_computer_caches
 
 
 class TestTwoStageMatching:
@@ -554,6 +554,23 @@ class TestTextSimilarity:
         except ImportError:
             # Skip if sentence-transformers not installed
             pass
+
+    def test_clear_text_computer_caches_deduplicates_instances(self):
+        """Ensure shared text computers are only cleared once per frame."""
+        class StubTextComputer:
+            def __init__(self):
+                self.clear_calls = 0
+
+            def clear_cache(self):
+                self.clear_calls += 1
+
+        shared = StubTextComputer()
+        semantic = StubTextComputer()
+
+        clear_text_computer_caches(shared, semantic, shared, None)
+
+        assert shared.clear_calls == 1
+        assert semantic.clear_calls == 1
 
 
 if __name__ == "__main__":

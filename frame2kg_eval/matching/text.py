@@ -35,6 +35,21 @@ def _log_device_once(device: str) -> None:
         _SEMANTIC_DEVICE_MESSAGE_EMITTED = True
 
 
+def clear_text_computer_caches(*text_computers) -> None:
+    """Clear embedding caches once per unique text computer."""
+    cleared_computers = set()
+    for text_computer in text_computers:
+        if text_computer is None:
+            continue
+        computer_id = id(text_computer)
+        if computer_id in cleared_computers:
+            continue
+        clear_cache = getattr(text_computer, "clear_cache", None)
+        if clear_cache is not None:
+            clear_cache()
+        cleared_computers.add(computer_id)
+
+
 class TextSimilarityComputer:
     """Compute text similarities using various methods."""
     
