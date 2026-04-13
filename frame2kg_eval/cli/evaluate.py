@@ -72,21 +72,11 @@ def load_config(config_path: Optional[Path] = None) -> Dict:
     """Load configuration from file or use defaults."""
     default_config_path = Path(__file__).parent.parent / "config" / "defaults.yaml"
 
-    if default_config_path.exists():
-        with open(default_config_path) as f:
-            config = yaml.safe_load(f)
-    else:
-        # Hardcoded defaults as fallback when the packaged config is unavailable.
-        config = {
-            "tau": 0.3,
-            "alpha": 0.7,
-            "text_mode": "semantic",
-            "text_fields": ["label", "attributes"],
-            "text_floor": 0.25,
-            "model_name": "sentence-transformers/all-MiniLM-L6-v2",
-            "predicate_mode": "normalised",
-            "predicate_semantic_threshold": 0.6,
-        }
+    if not default_config_path.exists():
+        raise FileNotFoundError(f"Default configuration file not found: {default_config_path}")
+
+    with open(default_config_path) as f:
+        config = yaml.safe_load(f) or {}
 
     if config_path and config_path.exists():
         with open(config_path) as f:
@@ -168,8 +158,8 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     manifest_path = pred_dir / "manifest.csv"
     timing_stats = manifest_timing(manifest_path) if manifest_path.exists() else None
     
-    include_invalid = bool(cfg.get("include_invalid", True))
-    strict_mode = bool(cfg.get("strict_mode", False))
+    include_invalid = bool(cfg["include_invalid"])
+    strict_mode = bool(cfg["strict_mode"])
 
     gt_graphs: Dict[Tuple[str, int], Dict] = {}
     for video_id, frame_no, graph in gt_adapter.iter_frames():
@@ -177,13 +167,13 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
 
     shared_text_computer = TextSimilarityComputer(
         mode=cfg["text_mode"],
-        model_name=cfg.get("model_name"),
+        model_name=cfg["model_name"],
     )
     semantic_text_computer = shared_text_computer if cfg["text_mode"] == "semantic" else None
-    if cfg.get("predicate_mode") == "semantic" and semantic_text_computer is None:
+    if cfg["predicate_mode"] == "semantic" and semantic_text_computer is None:
         semantic_text_computer = TextSimilarityComputer(
             mode="semantic",
-            model_name=cfg.get("model_name"),
+            model_name=cfg["model_name"],
         )
 
     frame_results: List[Dict] = []
@@ -275,9 +265,9 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
                 p_edges,
                 g_edges,
                 node_id_mapping,
-                cfg.get("predicate_mode", "exact"),
-                semantic_threshold=cfg.get("predicate_semantic_threshold", 0.6),
-                model_name=cfg.get("model_name"),
+                cfg["predicate_mode"],
+                semantic_threshold=cfg["predicate_semantic_threshold"],
+                model_name=cfg["model_name"],
                 text_computer=semantic_text_computer,
             )
 

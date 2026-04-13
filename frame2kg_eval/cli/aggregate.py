@@ -78,19 +78,19 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
     manifest_path = pred_dir / "manifest.csv"
     timing_stats = manifest_timing(manifest_path) if manifest_path.exists() else None
 
-    include_invalid = bool(config.get("include_invalid", True))
-    strict_mode = bool(config.get("strict_mode", False))
-    text_mode = config.get("text_mode", "semantic")
+    include_invalid = bool(config["include_invalid"])
+    strict_mode = bool(config["strict_mode"])
+    text_mode = config["text_mode"]
 
     shared_text_computer = TextSimilarityComputer(
         mode=text_mode,
-        model_name=config.get("model_name"),
+        model_name=config["model_name"],
     )
     semantic_text_computer = shared_text_computer if text_mode == "semantic" else None
-    if config.get("predicate_mode") == "semantic" and semantic_text_computer is None:
+    if config["predicate_mode"] == "semantic" and semantic_text_computer is None:
         semantic_text_computer = TextSimilarityComputer(
             mode="semantic",
-            model_name=config.get("model_name"),
+            model_name=config["model_name"],
         )
 
     node_metrics_list: List[Dict] = []
@@ -161,9 +161,9 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
                 p_edges,
                 g_edges,
                 node_id_mapping,
-                config.get("predicate_mode", "exact"),
-                semantic_threshold=config.get("predicate_semantic_threshold", 0.6),
-                model_name=config.get("model_name"),
+                config["predicate_mode"],
+                semantic_threshold=config["predicate_semantic_threshold"],
+                model_name=config["model_name"],
                 text_computer=semantic_text_computer,
             )
 
@@ -211,13 +211,13 @@ def evaluate_single_run(pred_dir: Path, gt_graphs: Dict[Tuple[str, int], Dict], 
               help="Root directory containing variant/index subdirectories")
 @click.option("--gt", type=str, required=True,
               help="Ground truth spec (hf:dataset:split or path)")
-@click.option("--tau", type=float, default=0.3,
+@click.option("--tau", type=float, default=None,
               help="IoU threshold for node matching")
-@click.option("--alpha", type=float, default=0.7,
+@click.option("--alpha", type=float, default=None,
               help="Blending weight for IoU vs text similarity")
-@click.option("--text-mode", type=click.Choice(["tfidf", "semantic", "hybrid"]), default="semantic",
+@click.option("--text-mode", type=click.Choice(["tfidf", "semantic", "hybrid"]), default=None,
               help="Text similarity mode")
-@click.option("--text-floor", type=float, default=0.25,
+@click.option("--text-floor", type=float, default=None,
               help="Minimum text similarity threshold")
 @click.option("--out", type=click.Path(path_type=Path), required=True,
               help="Output CSV file path")
@@ -235,14 +235,16 @@ def main(pred_root, gt, tau, alpha, text_mode, text_floor, out, config,
     cfg = load_config(config)
     
     # Override with CLI arguments
-    cfg.update({
-        "tau": tau,
-        "alpha": alpha,
-        "text_mode": text_mode,
-        "text_floor": text_floor,
-    })
-    
-    logger.info(f"Configuration: τ={tau}, α={alpha}, mode={text_mode}")
+    if tau is not None:
+        cfg["tau"] = tau
+    if alpha is not None:
+        cfg["alpha"] = alpha
+    if text_mode is not None:
+        cfg["text_mode"] = text_mode
+    if text_floor is not None:
+        cfg["text_floor"] = text_floor
+
+    logger.info(f"Configuration: τ={cfg['tau']}, α={cfg['alpha']}, mode={cfg['text_mode']}")
     logger.info(f"Matching seed: {MATCHING_SEED}")
     
     # Find all run directories
