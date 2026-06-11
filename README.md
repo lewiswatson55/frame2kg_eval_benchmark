@@ -208,15 +208,21 @@ node_metrics = node_prf1(pred_nodes, gt_nodes, result["mapping"])
 
 ## Citation
 
-If you use this toolkit in your research, please cite:
+If you use this toolkit in your work, please cite:
 
 ```bibtex
-@software{frame2kg_eval,
-  title = {Frame2KG Evaluation Toolkit},
-  author = {TBC},
-  year = {2025},
-  url = {TBC}
-}
+@inproceedings{watson2026frame2kg,
+  title = {Frame2KG: A Benchmark and Evaluation Toolkit for Interpretable Frame-to-Graph Generation},
+  author = {Watson, Lewis N. and Strathearn, Carl and Mitchell, Kenny and Yu, Yanchao},
+  booktitle = {Proceedings of the Fifteenth Language Resources and Evaluation Conference (LREC 2026)},
+  month = {May},
+  year = {2026},
+  pages = {10912--10926},
+  address = {Palma, Mallorca, Spain},
+  publisher = {European Language Resources Association (ELRA)},
+  editor = {Piperidis, Stelios and Bel, Núria and van den Heuvel, Henk and Ide, Nancy and Krek, Simon and Toral, Antonio},
+  doi = {10.63317/4ys6kofrzoc5},
+  url = {https://doi.org/10.63317/4ys6kofrzoc5}
 ```
 
 ## License
