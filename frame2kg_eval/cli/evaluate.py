@@ -10,6 +10,12 @@ import numpy as np
 from tqdm import tqdm
 
 from frame2kg_eval.io.preds import PredictionLoader
+from frame2kg_eval.io.compressed_tokens import (
+    CompressedTokenPredictionLoader,
+    check_compressed_token_file_conformity,
+    compute_compressed_token_conformity_from_directory,
+    compute_compressed_token_validity_from_directory,
+)
 from frame2kg_eval.io.groundtruth import create_ground_truth_adapter
 from frame2kg_eval.matching.assign import two_stage_node_match
 from frame2kg_eval.matching.text import TextSimilarityComputer, clear_text_computer_caches
@@ -109,10 +115,12 @@ def load_config(config_path: Optional[Path] = None) -> Dict:
               help="Include edge-by-label baseline metrics")
 @click.option("--composite-diagnostics/--no-composite-diagnostics", default=False,
               help="Include composite-aware diagnostic metrics (does not affect primary F1)")
+@click.option("--compressed-tokens", is_flag=True, default=False,
+              help="Read predictions from *.graph.txt compressed-token files")
 @click.option("--verbose/--quiet", default=True,
               help="Verbose output")
 def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, config,
-         edge_baseline, composite_diagnostics, verbose):
+         edge_baseline, composite_diagnostics, compressed_tokens, verbose):
     """Evaluate Frame2KG predictions against ground truth."""
     
     # Load configuration
@@ -139,18 +147,27 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
     
     # Load predictions and ground truth
     logger.info(f"Loading predictions from {pred_dir}")
-    pred_loader = PredictionLoader(pred_dir)
+    if compressed_tokens:
+        pred_loader = CompressedTokenPredictionLoader(pred_dir)
+    else:
+        pred_loader = PredictionLoader(pred_dir)
     
     logger.info(f"Loading ground truth: {gt}")
     gt_adapter = create_ground_truth_adapter(gt)
     
     # Check validity statistics
-    validity_stats = compute_validity_from_directory(pred_dir)
+    if compressed_tokens:
+        validity_stats = compute_compressed_token_validity_from_directory(pred_dir)
+    else:
+        validity_stats = compute_validity_from_directory(pred_dir)
     logger.info(f"Validity: {validity_stats['valid_count']}/{validity_stats['total_count']} "
                 f"({validity_stats['validity_rate']:.1f}%)")
     
     # Check schema conformity statistics
-    conformity_stats = compute_conformity_from_directory(pred_dir)
+    if compressed_tokens:
+        conformity_stats = compute_compressed_token_conformity_from_directory(pred_dir)
+    else:
+        conformity_stats = compute_conformity_from_directory(pred_dir)
     logger.info(f"Schema Conformity: {conformity_stats['conformant_count']}/{conformity_stats['total_count']} "
                 f"({conformity_stats['conformity_rate_total']:.1f}%)")
     
@@ -206,7 +223,14 @@ def main(pred_dir, gt, tau, alpha, text_mode, text_fields, text_floor, out, conf
         if pred_path is None:
             missing_predictions.append((video_id, frame_no))
         else:
-            if pred_path.suffix == ".json":
+            if compressed_tokens:
+                is_conformant, _ = check_compressed_token_file_conformity(pred_path)
+                schema_conformant_flag = 1 if is_conformant else 0
+                pred_graph = pred_loader.get_graph(video_id, frame_no)
+                parsed_json_flag = 1 if pred_graph is not None else 0
+                if pred_graph is None:
+                    unusable_predictions.append((video_id, frame_no))
+            elif pred_path.suffix == ".json":
                 is_conformant, _ = check_file_conformity(pred_path)
                 schema_conformant_flag = 1 if is_conformant else 0
                 pred_graph = pred_loader.get_graph(video_id, frame_no)
